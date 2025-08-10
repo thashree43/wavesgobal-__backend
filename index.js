@@ -1,32 +1,30 @@
 import express from 'express';
 import cors from "cors";
-import { Router } from 'express';
 import mongoose from 'mongoose';
-import Adminrouter from './Routes/AdminRoutes.js';
-import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-dotenv.config()
+import path from 'path';
+import Adminrouter from './Routes/AdminRoutes.js';
 import databaseConnection from './utils/db.js';
 
-databaseConnection()
-const { urlencoded } = bodyParser
+dotenv.config();
+databaseConnection();
 
-const app = express()
-
-const PORT =3000
+const app = express();
+const PORT = 3000;
 
 app.use(cors({
-    origin:'http://localhost:5173',
-    allowedHeaders:'Content-Type',
-    credentials:true
-}))
+    origin: 'http://localhost:5173',
+    allowedHeaders: 'Content-Type',
+    credentials: true
+}));
 
-app.use(express.json())
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.use(urlencoded({extended:true}))
+// app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
-app.use('/api/admin',Adminrouter)
+app.use('/api/admin', Adminrouter);
 
-app.listen(PORT,()=>{
+app.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);
-})
+});

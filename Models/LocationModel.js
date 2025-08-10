@@ -1,16 +1,25 @@
 import mongoose from "mongoose";
 
-const Schema = new mongoose.Schema({
- name:{
-    type:String,
-    required:true,
-    unique:true
- },
- image:{
-    type:String,
- }
-},{timestamps:true});
+const LocationSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  description: {
+    type: String,
+    required: true
+  },
+  image: {
+    type: String
+  },
+  status: {
+    type: String,
+    enum: ['active', 'inactive'], 
+    default: 'active'
+  }
+}, { timestamps: true });
 
-const categorymodel = mongoose.model('Category',CategorySchema)
+const locationmodel = mongoose.model('Location', LocationSchema);
 
-export default categorymodel
+export default locationmodel;
