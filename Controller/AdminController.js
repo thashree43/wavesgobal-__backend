@@ -1,4 +1,5 @@
 import locationmodel from "../Models/LocationModel.js";
+import PropertyModel from "../Models/PropertyModel.js";
 
 
 export const addLocation = async (req, res) => {
@@ -46,4 +47,336 @@ export const addLocation = async (req, res) => {
 }
   
 
+// export const addproperty = async (req, res) => {
+//   try {
+//     console.log("first");
+//     const { title, description, type, neighborhood, location, mapLocation, price, area, bedrooms, bathrooms } = req.body;
 
+//     console.log("ss");
+
+//     const images = req.files.map(file => file.location);
+
+//     const existproperty = await PropertyModel.find({title})
+
+//     if(!existproperty){
+//       res.status(400).json({message:"property allready existed"})
+//     }else{
+//        const newproperty = new PropertyModel({
+//         title,
+//         description,
+//         type,
+//         neighborhood,
+//         location,
+//         mapLocation,
+//         price,
+//         area,
+//         bedrooms,
+//         bathrooms
+//        })
+
+//        const saveproperty = await newproperty.save()
+//        res.status(200).json({ message: "Property added"});
+//     }
+     
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+
+// export const getProperty = async(req,res)=>{
+//   try {
+//     const property = await PropertyModel.find()
+
+//     if(!property){
+//       res.status(404).json({message:"No properties found"})
+//     }else{
+//       res.status(200).json({success:true,property})
+//     }
+//   } catch (error) {
+//     console.error(error)
+//     res.status(500).json({message:"Internal server error"})
+//   }
+// }
+
+
+
+export const addproperty = async (req, res) => {
+  try {
+    const { 
+      title, 
+      description, 
+      type, 
+      neighborhood, 
+      location, 
+      mapLocation, 
+      price, 
+      area, 
+      bedrooms, 
+      bathrooms, 
+      guests, 
+      beds,
+      propertyHighlights,
+      amenities,
+      roomsAndSpaces,
+      nearbyAttractions,
+      houseRules,
+      extraServices,
+      status 
+    } = req.body;
+
+    const images = req.files ? req.files.map(file => ({
+      url: file.location,
+      name: file.originalname,
+      id: file.filename
+    })) : [];
+
+    const existProperty = await PropertyModel.findOne({ title });
+    if (existProperty) {
+      return res.status(400).json({ message: "Property already exists" });
+    }
+
+    const parsedMapLocation = 
+      typeof mapLocation === "string" ? JSON.parse(mapLocation) : mapLocation;
+
+    const parsedPropertyHighlights = 
+      typeof propertyHighlights === "string" ? JSON.parse(propertyHighlights) : propertyHighlights || [];
+
+    const cleanedPropertyHighlights = parsedPropertyHighlights.map(highlight => ({
+      name: highlight.name || '',
+      icon: typeof highlight.icon === 'object' ? '' : (highlight.icon || '')
+    }));
+
+    const parsedAmenities = 
+      typeof amenities === "string" ? JSON.parse(amenities) : amenities || {
+        general: [],
+        kitchen: [],
+        recreation: [],
+        safety: []
+      };
+
+    const cleanedAmenities = {
+      general: (parsedAmenities.general || []).map(item => ({
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+      })),
+      kitchen: (parsedAmenities.kitchen || []).map(item => ({
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+      })),
+      recreation: (parsedAmenities.recreation || []).map(item => ({
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+      })),
+      safety: (parsedAmenities.safety || []).map(item => ({
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+      }))
+    };
+
+    const parsedRoomsAndSpaces = 
+      typeof roomsAndSpaces === "string" ? JSON.parse(roomsAndSpaces) : roomsAndSpaces || {};
+
+    const parsedNearbyAttractions = 
+      typeof nearbyAttractions === "string" ? JSON.parse(nearbyAttractions) : nearbyAttractions || [];
+
+    const cleanedNearbyAttractions = parsedNearbyAttractions
+      .filter(attraction => attraction.name && attraction.distance)
+      .map(attraction => ({
+        name: attraction.name,
+        distance: attraction.distance
+      }));
+
+    const parsedHouseRules = 
+      typeof houseRules === "string" ? JSON.parse(houseRules) : houseRules || {
+        checkIn: '15:00',
+        checkOut: '11:00',
+        maxGuests: '',
+        smoking: false,
+        parties: false,
+        pets: false,
+        children: false
+      };
+
+    const parsedExtraServices = 
+      typeof extraServices === "string" ? JSON.parse(extraServices) : extraServices || [];
+
+    const newProperty = new PropertyModel({
+      title,
+      description,
+      type,
+      neighborhood,
+      location,
+      mapLocation: parsedMapLocation,
+      price,
+      area,
+      bedrooms,
+      bathrooms,
+      guests,
+      beds,
+      propertyHighlights: cleanedPropertyHighlights,
+      amenities: cleanedAmenities,
+      roomsAndSpaces: parsedRoomsAndSpaces,
+      nearbyAttractions: cleanedNearbyAttractions,
+      houseRules: parsedHouseRules,
+      extraServices: parsedExtraServices,
+      images,
+      status: status === 'true' || status === true
+    });
+
+    const savedProperty = await newProperty.save();
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Property added successfully", 
+      property: savedProperty 
+    });
+     
+  } catch (error) {
+    console.error("Error adding property:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getProperty = async (req, res) => {
+  try {
+    const properties = await PropertyModel.find()
+      .populate('neighborhood', 'name')
+      .sort({ createdAt: -1 });
+
+    if (!properties || properties.length === 0) {
+      return res.status(404).json({ message: "No properties found" });
+    }
+
+    const formattedProperties = properties.map(property => ({
+      id: property._id,
+      title: property.title,
+      description: property.description,
+      type: property.type,
+      neighborhood: property.neighborhood?.name || property.neighborhood,
+      location: property.location,
+      mapLocation: property.mapLocation,
+      price: `AED ${property.price?.toLocaleString()}`,
+      area: property.area ? `${property.area} sqft` : '',
+      bedrooms: property.bedrooms,
+      bathrooms: property.bathrooms,
+      guests: property.guests,
+      beds: property.beds,
+      propertyHighlights: property.propertyHighlights,
+      amenities: property.amenities,
+      roomsAndSpaces: property.roomsAndSpaces,
+      nearbyAttractions: property.nearbyAttractions,
+      houseRules: property.houseRules,
+      extraServices: property.extraServices,
+      images: property.images,
+      status: property.status ? 'Available' : 'Not Available',
+      addedDate: property.createdAt.toISOString().split('T')[0],
+    }));
+
+    res.status(200).json({ 
+      success: true, 
+      property: formattedProperties 
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const updateProperty = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = { ...req.body };
+
+    if (req.body.mapLocation) {
+      updateData.mapLocation = JSON.parse(req.body.mapLocation);
+    }
+    if (req.body.propertyHighlights) {
+      updateData.propertyHighlights = JSON.parse(req.body.propertyHighlights);
+    }
+    if (req.body.amenities) {
+      updateData.amenities = JSON.parse(req.body.amenities);
+    }
+    if (req.body.roomsAndSpaces) {
+      updateData.roomsAndSpaces = JSON.parse(req.body.roomsAndSpaces);
+    }
+    if (req.body.nearbyAttractions) {
+      updateData.nearbyAttractions = JSON.parse(req.body.nearbyAttractions);
+    }
+    if (req.body.houseRules) {
+      updateData.houseRules = JSON.parse(req.body.houseRules);
+    }
+    if (req.body.extraServices) {
+      updateData.extraServices = JSON.parse(req.body.extraServices);
+    }
+
+    if (req.files && req.files.length > 0) {
+      updateData.images = req.files.map(file => ({
+        url: file.location,
+        name: file.originalname,
+        id: file.filename
+      }));
+    }
+
+    const updatedProperty = await PropertyModel.findByIdAndUpdate(
+      id, 
+      updateData, 
+      { new: true }
+    );
+
+    if (!updatedProperty) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Property updated successfully", 
+      property: updatedProperty 
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const deleteProperty = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedProperty = await PropertyModel.findByIdAndDelete(id);
+
+    if (!deletedProperty) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: "Property deleted successfully" 
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getPropertyById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const property = await PropertyModel.findById(id)
+      .populate('neighborhood', 'name');
+
+    if (!property) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      property 
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
