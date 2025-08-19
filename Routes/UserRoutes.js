@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,VerifyOtp,ResendOtp,userlogout} from "../Controller/AuthController.js"
-
+import {getproperties} from "../Controller/Propertiescontroller.js"
 
 dotenv.config();
 
@@ -15,6 +15,6 @@ router.post("/verify-otp",VerifyOtp)
 router.post("/resend-otp",ResendOtp)
 router.post("/logout",userlogout)
 
-
+router.get("/properties",getproperties)
 
 export default router;
