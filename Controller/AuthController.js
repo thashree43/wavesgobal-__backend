@@ -30,10 +30,11 @@ export const Userlogin = async (req, res) => {
 
     res.cookie("usertoken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "none", 
+      secure: process.env.JWT_SECRET,      
+      sameSite: "lax",    
       maxAge: 24 * 60 * 60 * 1000
     });
+    
 
     res.status(200).json({ message: "Successfully logged in", token, user });
   } catch (error) {
@@ -62,6 +63,7 @@ export const UserRegister = async (req, res) => {
     await newUser.save();
 
     const otp = crypto.randomInt(100000, 999999);
+    console.log(otp)
 
     await OtpModel.create({
       email,
@@ -105,10 +107,11 @@ export const VerifyOtp = async (req, res) => {
 
     res.cookie("usertoken", token, {
       httpOnly: true,
-      secure: false,
-      sameSite: "strict",
+      secure: false,      
+      sameSite: "lax",   
       maxAge: 24 * 60 * 60 * 1000
     });
+    
 
     res.status(200).json({ message: "OTP verified, logged in", user });
   } catch (error) {
@@ -116,6 +119,25 @@ export const VerifyOtp = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+export const getUser = async (req, res) => {
+  try {
+    const token = req.cookies.usertoken;
+
+    if (!token) {
+      return res.status(401).json({ message: "No token found" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await UserModel.findById(decoded.id).select("-password");
+
+    res.status(200).json({ user });
+  } catch (error) {
+    console.error(error);
+    res.status(401).json({ message: "Invalid or expired token" });
+  }
+};
+
 
 export const ResendOtp = async (req, res) => {
   try {
@@ -138,11 +160,17 @@ export const ResendOtp = async (req, res) => {
 };
 
 export const userlogout = async (req,res)=>{
-    try {
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Server error", error: error.message });
-
-    }
+  try {
+     res.clearCookie('usertoken',{
+      httpOnly:true,
+      secure:true,
+      sameSite:'strict'
+     });
+     return res.status(200).json({ message: "Logged out successfully" });
+  } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Server error", error: error.message });
+  }
 }
+
+
