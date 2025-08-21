@@ -1,10 +1,12 @@
 import jwt from "jsonwebtoken";
-import Booking from "../models/Booking.js";
-import UserModel from "../models/User.js";
-import PropertyModel from "../models/Property.js";
+import BookingModel from "../Models/BookingModel.js";
+import UserModel from "../Models/UserModel.js";
+import PropertyModel from "../Models/PropertyModel.js";
 
 export const createBooking = async (req, res) => {
   try {
+
+    console.log(req.body,"this be the body ")
     const { propertyId, checkIn, checkOut, guests } = req.body;
     const token = req.cookies.usertoken;
 
@@ -24,7 +26,7 @@ export const createBooking = async (req, res) => {
       (new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24);
     const totalPrice = nights * property.price;
 
-    const booking = await Booking.create({
+    const booking = await BookingModel.create({
       user: user._id,
       property: propertyId,
       checkIn,
@@ -47,7 +49,7 @@ export const createBooking = async (req, res) => {
 
 export const cancelBooking = async (req, res) => {
     try {
-      const booking = await Booking.findById(req.params.id);
+      const booking = await BookingModel.findById(req.params.id);
   
       if (!booking) return res.status(404).json({ message: "Booking not found" });
   

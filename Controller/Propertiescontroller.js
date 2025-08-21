@@ -21,3 +21,18 @@ export const getproperties = async (req, res) => {
         });
     }
 }
+
+
+export const getproperty = async(req,res)=>{
+    try {
+        const id = req.params.id
+    const property = await PropertyModel.findById(id)
+     if(!property){
+        res.status(404).json({message:"property not found"})
+     }
+     res.status(200).json({success:true,property})
+    } catch (error) {
+        res.status(500).json({message:"Internal server error"})
+        console.error(error)
+    }
+}
