@@ -36,3 +36,12 @@ export const getproperty = async(req,res)=>{
         console.error(error)
     }
 }
+
+
+export const getPropertybyFilter = async(req,res)=>{
+    try {
+        
+    } catch (error) {
+        
+    }
+}
