@@ -47,6 +47,42 @@ export const addLocation = async (req, res) => {
 }
   
 
+export const UpdateLocation = async (req, res) => {
+  try {
+    const { id, name, description, status } = req.body;
+    const image = req.file?.location;
+
+    if (!id) {
+      return res.status(400).json({ message: "Location ID is required" });
+    }
+
+    const updatedLocation = await locationmodel.findByIdAndUpdate(
+      id,
+      {
+        name,
+        description,
+        status,
+        ...(image && { image })  
+      },
+      { new: true } 
+    );
+
+    if (!updatedLocation) {
+      return res.status(404).json({ message: "Location not found" });
+    }
+
+    res.status(200).json({
+      message: "Location updated successfully",
+      location: updatedLocation
+    });
+
+  } catch (error) {
+    console.error("Error in UpdateLocation:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+};
+
+
 
 
 
@@ -235,6 +271,7 @@ export const getProperty = async (req, res) => {
 
 export const updateProperty = async (req, res) => {
   try {
+    console.log("lkkl")
     const { id } = req.params;
     const updateData = { ...req.body };
 
@@ -274,6 +311,8 @@ export const updateProperty = async (req, res) => {
       { new: true }
     );
 
+    console.log(updatedProperty,"may here")
+
     if (!updatedProperty) {
       return res.status(404).json({ message: "Property not found" });
     }
@@ -292,12 +331,14 @@ export const updateProperty = async (req, res) => {
 export const deleteProperty = async (req, res) => {
   try {
     const { id } = req.params;
+    console.log("first",id)
 
     const deletedProperty = await PropertyModel.findByIdAndDelete(id);
 
     if (!deletedProperty) {
       return res.status(404).json({ message: "Property not found" });
     }
+
 
     res.status(200).json({ 
       success: true, 
