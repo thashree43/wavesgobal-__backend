@@ -173,4 +173,71 @@ export const userlogout = async (req,res)=>{
   }
 }
 
+export const updateuser = async(req,res)=>{
+  try {
+    const {name,mobile} = req.body
+    const token = req.cookies.usertoken
+    if(!token){
+      res.status(404).json({message:"token not found"})
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await UserModel.findById(decoded.id).select("-password");
+    if(!user){
+      res.status(404).json({message:"User not found"})
+    }
+
+    if(name)user.name = name
+    if(mobile)user.mobile = mobile
+
+    await user.save()
+
+    res.status(200).json({success:true,user})
+
+  } catch (error) {
+    res.status(500).json({message:"Internal server error"})
+    console.error(error)
+  }
+}
+
+
+
+export const updatePass = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const token = req.cookies.usertoken;
+
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized, token not found" });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const user = await UserModel.findById(decoded.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
+
+    const isSameAsOld = await bcrypt.compare(newPassword, user.password);
+    if (isSameAsOld) {
+      return res
+        .status(400)
+        .json({ message: "New password cannot be the same as old password" });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    return res.status(200).json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Error updating password:", error.message);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 

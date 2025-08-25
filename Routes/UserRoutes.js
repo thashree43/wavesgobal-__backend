@@ -1,8 +1,8 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import {Userlogin,UserRegister,VerifyOtp,ResendOtp,userlogout, getUser} from "../Controller/AuthController.js"
-import {getproperties, getproperty} from "../Controller/Propertiescontroller.js"
+import {Userlogin,UserRegister,VerifyOtp,ResendOtp,userlogout, getUser, updateuser, updatePass} from "../Controller/AuthController.js"
+import {getLocation, getproperties, getproperty} from "../Controller/Propertiescontroller.js"
 import { createBooking } from "../Controller/BookingController.js";
 
 dotenv.config();
@@ -16,7 +16,9 @@ router.post("/verify-otp",VerifyOtp)
 router.post("/resend-otp",ResendOtp)
 router.post("/logout",userlogout)
 router.get("/getuser",getUser)
-
+router.put("/updateuser",updateuser)
+router.put("/changepassword",updatePass)
+router.get('/location',getLocation)
 router.get("/properties",getproperties)
 router.get("/property/:id",getproperty)
 router.post("/add-booking",createBooking)
