@@ -3,7 +3,8 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import { S3Client } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
-import { addLocation, addproperty, getProperty, getlocation } from "../Controller/AdminController.js";
+import { UpdateLocation, addLocation, addproperty, deleteProperty, getProperty, getlocation, updateProperty } from "../Controller/AdminController.js";
+import { getBookingStatus, getDashboardData, getDashboardStats, getMonthlyRevenue, getPropertyTypes, getRecentBookings, getTopLocations, getUserGrowth } from "./DashboardController.js";
 
 dotenv.config();
 
@@ -48,7 +49,20 @@ const propertyUpload = multer({
 
 Adminrouter.post("/addlocation", categoryUpload.single("image"), addLocation);
 Adminrouter.get("/getlocation", getlocation);
+Adminrouter.put("/updatelocation",categoryUpload.single('image'),UpdateLocation)
 Adminrouter.post("/addproperty", propertyUpload.array("images", 10), addproperty);
+Adminrouter.put("/updateproperty/:id", propertyUpload.array("images", 10), updateProperty);
+Adminrouter.delete("/deleteproperty/:id",deleteProperty)
 Adminrouter.get("/getproperty",getProperty)
+
+// Adminrouter.get('/stats', getDashboardStats);
+// Adminrouter.get('/monthly-revenue', getMonthlyRevenue);
+// Adminrouter.get('/user-growth', getUserGrowth);
+// Adminrouter.get('/property-types', getPropertyTypes);
+// Adminrouter.get('/booking-status', getBookingStatus);
+// Adminrouter.get('/recent-bookings', getRecentBookings);
+// Adminrouter.get('/top-locations', getTopLocations);
+
+Adminrouter.get('/data', getDashboardData);
 
 export default Adminrouter;
