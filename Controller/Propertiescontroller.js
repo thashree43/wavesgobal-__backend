@@ -19,6 +19,9 @@ export const getLocation = async(req,res)=>{
 
 export const getproperties = async (req, res) => {
   try {
+
+    console.log("000000")
+
     const {
       checkin,
       checkout,
@@ -35,6 +38,9 @@ export const getproperties = async (req, res) => {
       guests,
       minArea,
     } = req.query;
+
+
+    console.log("herrrrrr")
 
     let filter = {};
 

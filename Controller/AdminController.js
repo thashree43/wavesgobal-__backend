@@ -88,8 +88,6 @@ export const UpdateLocation = async (req, res) => {
 
 
 
-
-
 export const addproperty = async (req, res) => {
   try {
     const { 
@@ -115,79 +113,80 @@ export const addproperty = async (req, res) => {
     } = req.body;
 
     const images = req.files ? req.files.map(file => ({
-      url: file.location || file.path,   // use location if S3, path if local
+      url: file.location,
       name: file.originalname,
       id: file.filename
     })) : [];
 
     const existProperty = await PropertyModel.findOne({ title });
     if (existProperty) {
-      return res.status(400).json({ success: false, message: "Property already exists" });
+      return res.status(400).json({ message: "Property already exists" });
     }
 
-    const safeParse = (field, fallback) => {
-      try {
-        return typeof field === "string" ? JSON.parse(field) : (field || fallback);
-      } catch (e) {
-        console.error(`Invalid JSON for field:`, e.message);
-        return fallback;
-      }
-    };
+    const parsedMapLocation = 
+      typeof mapLocation === "string" ? JSON.parse(mapLocation) : mapLocation;
 
-    const parsedMapLocation = safeParse(mapLocation, {});
-    
-    const parsedPropertyHighlights = safeParse(propertyHighlights, []);
+    const parsedPropertyHighlights = 
+      typeof propertyHighlights === "string" ? JSON.parse(propertyHighlights) : propertyHighlights || [];
+
     const cleanedPropertyHighlights = parsedPropertyHighlights.map(highlight => ({
-      name: highlight?.name || '',
-      icon: typeof highlight?.icon === 'object' ? '' : (highlight?.icon || '')
+      name: highlight.name || '',
+      icon: typeof highlight.icon === 'object' ? '' : (highlight.icon || '')
     }));
 
-    const parsedAmenities = safeParse(amenities, {
-      general: [],
-      kitchen: [],
-      recreation: [],
-      safety: []
-    });
+    const parsedAmenities = 
+      typeof amenities === "string" ? JSON.parse(amenities) : amenities || {
+        general: [],
+        kitchen: [],
+        recreation: [],
+        safety: []
+      };
+
     const cleanedAmenities = {
       general: (parsedAmenities.general || []).map(item => ({
-        name: item?.name || '',
-        icon: typeof item?.icon === 'object' ? '' : (item?.icon || '')
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
       })),
       kitchen: (parsedAmenities.kitchen || []).map(item => ({
-        name: item?.name || '',
-        icon: typeof item?.icon === 'object' ? '' : (item?.icon || '')
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
       })),
       recreation: (parsedAmenities.recreation || []).map(item => ({
-        name: item?.name || '',
-        icon: typeof item?.icon === 'object' ? '' : (item?.icon || '')
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
       })),
       safety: (parsedAmenities.safety || []).map(item => ({
-        name: item?.name || '',
-        icon: typeof item?.icon === 'object' ? '' : (item?.icon || '')
+        name: item.name || '',
+        icon: typeof item.icon === 'object' ? '' : (item.icon || '')
       }))
     };
 
-    const parsedRoomsAndSpaces = safeParse(roomsAndSpaces, {});
-    
-    const parsedNearbyAttractions = safeParse(nearbyAttractions, []);
+    const parsedRoomsAndSpaces = 
+      typeof roomsAndSpaces === "string" ? JSON.parse(roomsAndSpaces) : roomsAndSpaces || {};
+
+    const parsedNearbyAttractions = 
+      typeof nearbyAttractions === "string" ? JSON.parse(nearbyAttractions) : nearbyAttractions || [];
+
     const cleanedNearbyAttractions = parsedNearbyAttractions
-      .filter(attraction => attraction?.name && attraction?.distance)
+      .filter(attraction => attraction.name && attraction.distance)
       .map(attraction => ({
         name: attraction.name,
         distance: attraction.distance
       }));
 
-    const parsedHouseRules = safeParse(houseRules, {
-      checkIn: '15:00',
-      checkOut: '11:00',
-      maxGuests: '',
-      smoking: false,
-      parties: false,
-      pets: false,
-      children: false
-    });
+    const parsedHouseRules = 
+      typeof houseRules === "string" ? JSON.parse(houseRules) : houseRules || {
+        checkIn: '15:00',
+        checkOut: '11:00',
+        maxGuests: '',
+        smoking: false,
+        parties: false,
+        pets: false,
+        children: false
+      };
 
-    const parsedExtraServices = safeParse(extraServices, []);
+    const parsedExtraServices = 
+      typeof extraServices === "string" ? JSON.parse(extraServices) : extraServices || [];
 
     const newProperty = new PropertyModel({
       title,
@@ -214,7 +213,7 @@ export const addproperty = async (req, res) => {
 
     const savedProperty = await newProperty.save();
 
-    res.status(201).json({ 
+    res.status(200).json({ 
       success: true, 
       message: "Property added successfully", 
       property: savedProperty 
@@ -222,10 +221,9 @@ export const addproperty = async (req, res) => {
      
   } catch (error) {
     console.error("Error adding property:", error);
-    res.status(500).json({ success: false, message: "Server error while adding property", error: error.message });
+    res.status(500).json({ message: "Server error" });
   }
 };
-
 
 export const getProperty = async (req, res) => {
   try {
@@ -375,7 +373,7 @@ export const getPropertyById = async (req, res) => {
 };
 
 
-export const getUsers = async(req,res)=>{
+export const getUsers = async(req,r)=>{
   try {
     console.log("l;l;;")
     const users = await UserModel.find()
