@@ -118,7 +118,23 @@ const propertySchema = new mongoose.Schema({
     status: {
         type: Boolean,
         default: true
+    },
+
+    bookings: [
+        {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Booking"
+        }
+    ],
+    availability: {
+        unavailableDates: [
+            {
+                checkIn: { type: Date },
+                checkOut: { type: Date }
+            }
+        ]
     }
+
 }, { timestamps: true });
 
 export default mongoose.model("Property", propertySchema);
