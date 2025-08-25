@@ -4,7 +4,7 @@ import locationmodel from "../Models/LocationModel.js";
 
 export const getLocation = async(req,res)=>{
     try {
-        const location = await locationmodel.find()
+        const location = await locationmodel.find({status:'active'})
         if(!location){
             res.status(404).json({message:"Location not found"})
         }
@@ -38,7 +38,6 @@ export const getproperties = async (req, res) => {
 
     let filter = {};
 
-    // ✅ Normal filters
     if (location) {
       filter.location = { $regex: location, $options: "i" };
     }
@@ -126,3 +125,5 @@ export const getproperty = async (req, res) => {
     }
   };
   
+
+
