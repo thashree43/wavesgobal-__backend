@@ -59,12 +59,10 @@ export const getproperties = async (req, res) => {
 
     let unavailablePropertyIds = [];
 
-    // ✅ If checkin & checkout are provided → exclude booked properties
     if (checkin && checkout) {
       const checkInDate = new Date(checkin);
       const checkOutDate = new Date(checkout);
 
-      // Find bookings overlapping with requested dates
       const overlappingBookings = await BookingModel.find({
         $or: [
           {

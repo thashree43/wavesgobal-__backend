@@ -98,6 +98,7 @@ export const getcheckout = async (req, res) => {
       return res.status(404).json({ message: "No bookings found for this user." });
     }
 
+    console.log(bookings,"clclc")
     res.status(200).json({ bookings });
   } catch (error) {
     console.error(error);
