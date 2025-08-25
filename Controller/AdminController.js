@@ -1,5 +1,6 @@
 import locationmodel from "../Models/LocationModel.js";
 import PropertyModel from "../Models/PropertyModel.js";
+import UserModel from "../Models/UserModel.js";
 
 
 export const addLocation = async (req, res) => {
@@ -370,3 +371,20 @@ export const getPropertyById = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+
+export const getUsers = async(req,res)=>{
+  try {
+    console.log("l;l;;")
+    const users = await UserModel.find()
+
+    if(!users){
+      res.status(404).json({message:"Users not found"})
+    }
+    res.status(200).json(users)
+  } catch (error) {
+    res.status(500).json({messag:"Internal server error"})
+
+
+  }
+}
