@@ -79,3 +79,29 @@ export const cancelBooking = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
+
+export const getcheckout = async (req, res) => {
+  try {
+    const token = req.cookies.usertoken;
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized. No token provided." });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const bookings = await BookingModel.find({ user: decoded.id })
+      .populate("property") 
+      .populate("user", "-password"); 
+
+    if (!bookings || bookings.length === 0) {
+      return res.status(404).json({ message: "No bookings found for this user." });
+    }
+
+    res.status(200).json({ bookings });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: error.message || "Server error" });
+  }
+};
+

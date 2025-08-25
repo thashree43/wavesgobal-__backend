@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,VerifyOtp,ResendOtp,userlogout, getUser, updateuser, updatePass} from "../Controller/AuthController.js"
 import {getLocation, getproperties, getproperty} from "../Controller/Propertiescontroller.js"
-import { createBooking } from "../Controller/BookingController.js";
+import { createBooking,getcheckout} from "../Controller/BookingController.js";
 
 dotenv.config();
 
@@ -22,5 +22,6 @@ router.get('/location',getLocation)
 router.get("/properties",getproperties)
 router.get("/property/:id",getproperty)
 router.post("/add-booking",createBooking)
+router.get('/getcheckout',getcheckout)
 
 export default router;
