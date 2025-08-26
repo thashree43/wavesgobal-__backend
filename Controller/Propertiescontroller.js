@@ -1,67 +1,65 @@
+import mongoose from "mongoose";
 import PropertyModel from "../Models/PropertyModel.js";
 import BookingModel from "../Models/BookingModel.js";
 import locationmodel from "../Models/LocationModel.js";
 
-export const getLocation = async(req,res)=>{
-    try {
-        const location = await locationmodel.find({status:'active'})
-        if(!location){
-            res.status(404).json({message:"Location not found"})
-        }
-
-        res.status(200).json({success:true,location})
-    } catch (error) {
-        res.status(500).json({message:"Internal server error"})
-        console.error(error)
+export const getLocation = async (req, res) => {
+  try {
+    const location = await locationmodel.find({ status: "active" });
+    if (!location) {
+      return res.status(404).json({ message: "Location not found" });
     }
-}
-
+    res.status(200).json({ success: true, location });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error" });
+    console.error(error);
+  }
+};
 
 export const getproperties = async (req, res) => {
   try {
 
-    console.log("000000")
 
+    console.log("first")
     const {
       checkin,
       checkout,
-      adults,
-      children,
-      infants,
       location,
-      neighborhood,
+      locationId,
+      guests,
       priceMin,
       priceMax,
       propertyType,
       bedrooms,
       bathrooms,
-      guests,
       minArea,
     } = req.query;
 
+    console.log("l;llklkl",locationId)
 
-    console.log("herrrrrr")
 
     let filter = {};
 
     if (location) {
       filter.location = { $regex: location, $options: "i" };
+      if (guests) filter.guests = { $gte: Number(guests) };
+    } else {
+      if (locationId) {
+        if (mongoose.Types.ObjectId.isValid(locationId)) {
+          filter.neighborhood = new mongoose.Types.ObjectId(locationId);
+        }
+      }
+      if (priceMin || priceMax) {
+        filter.price = {};
+        if (priceMin) filter.price.$gte = Number(priceMin);
+        if (priceMax) filter.price.$lte = Number(priceMax);
+      }
+      if (propertyType) filter.type = propertyType;
+      if (bedrooms) filter.bedrooms = { $gte: Number(bedrooms) };
+      if (bathrooms) filter.bathrooms = { $gte: Number(bathrooms) };
+      if (guests) filter.guests = { $gte: Number(guests) };
+      if (minArea) filter.area = { $gte: Number(minArea) };
     }
-    if (neighborhood) {
-      filter.neighborhood = neighborhood;
-    }
-    if (priceMin || priceMax) {
-      filter.price = {};
-      if (priceMin) filter.price.$gte = Number(priceMin);
-      if (priceMax) filter.price.$lte = Number(priceMax);
-    }
-    if (propertyType) {
-      filter.type = propertyType;
-    }
-    if (bedrooms) filter.bedrooms = { $gte: Number(bedrooms) };
-    if (bathrooms) filter.bathrooms = { $gte: Number(bathrooms) };
-    if (guests) filter.guests = { $gte: Number(guests) };
-    if (minArea) filter.area = { $gte: Number(minArea) };
 
     let unavailablePropertyIds = [];
 
@@ -87,7 +85,6 @@ export const getproperties = async (req, res) => {
       }
     }
 
-    // ✅ Fetch properties
     const properties = await PropertyModel.find(filter)
       .populate("neighborhood")
       .sort({ createdAt: -1 });
@@ -108,26 +105,18 @@ export const getproperties = async (req, res) => {
 };
 
 export const getproperty = async (req, res) => {
-    try {
-      const { id } = req.params;
-  
-      if (!id) {
-        return res.status(400).json({ message: "Property ID is required" });
-      }
-  
-      const property = await PropertyModel.findById(id).populate("bookings");
-  
-      if (!property) {
-        return res.status(404).json({ message: "Property not found" });
-      }
-  
-      console.log(property, "this be the property");
-      return res.status(200).json({ success: true, property });
-    } catch (error) {
-      console.error(error);
-      return res.status(500).json({ message: "Internal server error" });
+  try {
+    const { id } = req.params;
+    if (!id) {
+      return res.status(400).json({ message: "Property ID is required" });
     }
-  };
-  
-
-
+    const property = await PropertyModel.findById(id).populate("bookings");
+    if (!property) {
+      return res.status(404).json({ message: "Property not found" });
+    }
+    return res.status(200).json({ success: true, property });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
