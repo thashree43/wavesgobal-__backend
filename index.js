@@ -15,12 +15,7 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors({
-    origin: [
-        "http://localhost:5173",
-        "https://wavescation.com",
-        "https://wavesglobal-frontend.vercel.app",
-        "https://www.wavescation.com"
-      ],   
+    origin:"*",
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
