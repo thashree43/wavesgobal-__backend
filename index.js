@@ -15,10 +15,16 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors({
-    origin: '*',
-    allowedHeaders: 'Content-Type',
+    origin: [
+        "http://localhost:5173",          
+        "https://wavescation.com"
+    ],    
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
 }));
+
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
