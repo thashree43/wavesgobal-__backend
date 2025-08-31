@@ -16,7 +16,7 @@ const PORT = 3000;
 
 const allowedOrigins = [
     'https://www.wavescation.com',
-    'http://localhost:3000'
+    'http://localhost:5173'
 ];
 
 app.use(cors({
