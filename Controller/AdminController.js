@@ -1,3 +1,4 @@
+import BookingModel from "../Models/BookingModel.js";
 import locationmodel from "../Models/LocationModel.js";
 import PropertyModel from "../Models/PropertyModel.js";
 import UserModel from "../Models/UserModel.js";
@@ -373,9 +374,9 @@ export const getPropertyById = async (req, res) => {
 };
 
 
-export const getUsers = async(req,r)=>{
+export const getUsers = async(req,res)=>{
   try {
-    console.log("l;l;;")
+    console.log("fusereirst")
     const users = await UserModel.find()
 
     if(!users){
@@ -386,5 +387,19 @@ export const getUsers = async(req,r)=>{
     res.status(500).json({messag:"Internal server error"})
 
 
+  }
+}
+
+
+
+export const getBookings = async(req,res)=>{
+  try {
+    const bookings = await BookingModel.find({bookingStatus:"confirmed"}).populate("user", "name email phone")
+    .populate("property", "name location type");
+    console.log(bookings)
+
+    res.status(200).json(bookings)
+  } catch (error) {
+    
   }
 }
