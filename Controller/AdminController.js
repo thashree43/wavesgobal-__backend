@@ -1,7 +1,96 @@
+import adminModel from "../Models/AdminModel.js";
 import BookingModel from "../Models/BookingModel.js";
 import locationmodel from "../Models/LocationModel.js";
 import PropertyModel from "../Models/PropertyModel.js";
 import UserModel from "../Models/UserModel.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+
+
+
+
+
+export const adminRegister = async (req, res) => {
+  try {
+    console.log(req.body)
+    const { email, number, password } = req.body;
+
+    if (!email || !number || !password) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    const existingAdmin = await adminModel.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({ message: "Admin already exists" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newAdmin = new adminModel({
+      email,
+      number,
+      password: hashedPassword,
+    });
+
+    await newAdmin.save();
+
+    res.status(201).json({ message: "Admin registered successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const adminLogin = async (req, res) => {
+  try {
+    const { identifier, password } = req.body;
+    console.log(req.body);
+
+    if (!identifier || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email/phone and password are required" });
+    }
+
+    const admin = await adminModel.findOne({
+      $or: [{ email: identifier }, { number: identifier }],
+    });
+
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    const isMatch = await bcrypt.compare(password, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      { id: admin._id, role: "admin" }, 
+      process.env.JWT_SECRET,
+      { expiresIn: "30d" }
+    );
+    
+
+    res.cookie("admintoken", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    res.status(200).json({
+      message: "Admin logged in successfully",
+      token,
+      admin,
+    });
+  } catch (error) {
+    console.error("Login Error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
 
 
 export const addLocation = async (req, res) => {
