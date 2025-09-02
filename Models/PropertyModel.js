@@ -119,7 +119,6 @@ const propertySchema = new mongoose.Schema({
         type: Boolean,
         default: true
     },
-
     bookings: [
         {
             type: mongoose.Schema.Types.ObjectId,
