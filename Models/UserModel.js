@@ -8,17 +8,28 @@ const UserSchema = new mongoose.Schema({
     email: {
         type: String,
         required: true,
-        unique: true, // better to avoid duplicate accounts
+        unique: true,
         lowercase: true,
         trim: true
     },
     mobile: {
         type: String,
-        required: true
+        required: function() {
+            return !this.isGoogleUser; 
+        }
     },
     password: {
         type: String,
-        required: true
+        required: function() {
+            return !this.isGoogleUser; 
+        }
+    },
+    profilePic: {
+        type: String 
+    },
+    isGoogleUser: {
+        type: Boolean,
+        default: false
     },
     isAdmin: {
         type: Boolean,
@@ -31,14 +42,12 @@ const UserSchema = new mongoose.Schema({
     token: {
         type: String
     },
-
     bookings: [
         {
             type: mongoose.Schema.Types.ObjectId,
             ref: "Booking"
         }
     ]
-
 }, { timestamps: true });
 
 const UserModel = mongoose.model("User", UserSchema);

@@ -145,3 +145,23 @@ export const getCheckout = async (req, res) => {
 };
 
 
+export const bookingbyuser = async (req, res) => {
+  try {
+    const { id } = req.query
+    console.log("controller",req.query)
+    console.log(id)
+
+    if (!id) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const bookings = await BookingModel.find({ user: id ,bookingStatus:"confirmed"})
+      .populate("property") 
+      .populate("user", "name email"); 
+
+    res.status(200).json({ bookings });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch bookings", error });
+  }
+};
