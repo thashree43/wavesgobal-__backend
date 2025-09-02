@@ -362,30 +362,57 @@ export const getProperty = async (req, res) => {
 
 export const updateProperty = async (req, res) => {
   try {
-    console.log("lkkl")
-    const { id } = req.params;
-    const updateData = { ...req.body };
+    const { id } = req.params
+    const updateData = { ...req.body }
 
     if (req.body.mapLocation) {
-      updateData.mapLocation = JSON.parse(req.body.mapLocation);
+      updateData.mapLocation = JSON.parse(req.body.mapLocation)
     }
     if (req.body.propertyHighlights) {
-      updateData.propertyHighlights = JSON.parse(req.body.propertyHighlights);
+      const parsed = JSON.parse(req.body.propertyHighlights)
+      updateData.propertyHighlights = parsed.map(highlight => ({
+        name: highlight.name || '',
+        icon: typeof highlight.icon === 'object' ? '' : (highlight.icon || '')
+      }))
     }
     if (req.body.amenities) {
-      updateData.amenities = JSON.parse(req.body.amenities);
+      const parsed = JSON.parse(req.body.amenities)
+      updateData.amenities = {
+        general: (parsed.general || []).map(item => ({
+          name: item.name || '',
+          icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+        })),
+        kitchen: (parsed.kitchen || []).map(item => ({
+          name: item.name || '',
+          icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+        })),
+        recreation: (parsed.recreation || []).map(item => ({
+          name: item.name || '',
+          icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+        })),
+        safety: (parsed.safety || []).map(item => ({
+          name: item.name || '',
+          icon: typeof item.icon === 'object' ? '' : (item.icon || '')
+        }))
+      }
     }
     if (req.body.roomsAndSpaces) {
-      updateData.roomsAndSpaces = JSON.parse(req.body.roomsAndSpaces);
+      updateData.roomsAndSpaces = JSON.parse(req.body.roomsAndSpaces)
     }
     if (req.body.nearbyAttractions) {
-      updateData.nearbyAttractions = JSON.parse(req.body.nearbyAttractions);
+      const parsed = JSON.parse(req.body.nearbyAttractions)
+      updateData.nearbyAttractions = parsed
+        .filter(attraction => attraction.name && attraction.distance)
+        .map(attraction => ({
+          name: attraction.name,
+          distance: attraction.distance
+        }))
     }
     if (req.body.houseRules) {
-      updateData.houseRules = JSON.parse(req.body.houseRules);
+      updateData.houseRules = JSON.parse(req.body.houseRules)
     }
     if (req.body.extraServices) {
-      updateData.extraServices = JSON.parse(req.body.extraServices);
+      updateData.extraServices = JSON.parse(req.body.extraServices)
     }
 
     if (req.files && req.files.length > 0) {
@@ -393,31 +420,31 @@ export const updateProperty = async (req, res) => {
         url: file.location,
         name: file.originalname,
         id: file.filename
-      }));
+      }))
     }
 
     const updatedProperty = await PropertyModel.findByIdAndUpdate(
-      id, 
-      updateData, 
+      id,
+      updateData,
       { new: true }
-    );
-
-    console.log(updatedProperty,"may here")
+    )
 
     if (!updatedProperty) {
-      return res.status(404).json({ message: "Property not found" });
+      return res.status(404).json({ message: "Property not found" })
     }
 
-    res.status(200).json({ 
-      success: true, 
-      message: "Property updated successfully", 
-      property: updatedProperty 
-    });
+    res.status(200).json({
+      success: true,
+      message: "Property updated successfully",
+      property: updatedProperty
+    })
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Server error" });
+    console.error(error)
+    res.status(500).json({ message: "Server error" })
   }
-};
+}
+
+
 
 export const deleteProperty = async (req, res) => {
   try {

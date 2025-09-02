@@ -3,7 +3,8 @@ import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,VerifyOtp,ResendOtp,userlogout, getUser, updateuser, updatePass} from "../Controller/AuthController.js"
 import {getLocation, getproperties, getproperty} from "../Controller/Propertiescontroller.js"
-import { createBooking,getCheckout} from "../Controller/BookingController.js";
+import { bookingbyuser, createBooking,getCheckout} from "../Controller/BookingController.js";
+import { googleAuth } from "../Controller/GoogleAuthController.js";
 
 dotenv.config();
 
@@ -22,11 +23,9 @@ router.get('/location',getLocation)
 router.get("/properties",getproperties)
 router.get("/property/:id",getproperty)
 router.post("/add-booking",createBooking)
-router.get('/checkout', (req, res, next) => {
-    console.log("📌 /booking route hit");
-    console.log("Query:", req.query);
-    console.log("Cookies:", req.cookies);
-    next(); 
-  }, getCheckout);
+router.get('/checkout',getCheckout);
+router.post("/google-auth", googleAuth);
+router.get("/get-booking",bookingbyuser)
+
   
 export default router;
