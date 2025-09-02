@@ -3,9 +3,9 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import { S3Client } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
-import { UpdateLocation, addLocation, addproperty, deleteProperty, getBookings, getProperty, getUsers, getlocation, updateProperty } from "../Controller/AdminController.js";
+import { UpdateLocation, addLocation, addproperty, adminLogin, adminRegister, deleteProperty, getBookings, getProperty, getUsers, getlocation, updateProperty } from "../Controller/AdminController.js";
 import { getBookingStatus, getDashboardData, getDashboardStats, getMonthlyRevenue, getPropertyTypes, getRecentBookings, getTopLocations, getUserGrowth } from "./DashboardController.js";
-
+import { verifyAdmin } from "../Middleware/AuthMiddleware.js";
 dotenv.config();
 
 const Adminrouter = express.Router();
@@ -48,14 +48,16 @@ const propertyUpload = multer({
 
 
 Adminrouter.post("/addlocation", categoryUpload.single("image"), addLocation);
-Adminrouter.get("/getlocation", getlocation);
+Adminrouter.get("/getlocation",verifyAdmin, getlocation);
 Adminrouter.put("/updatelocation",categoryUpload.single('image'),UpdateLocation)
 Adminrouter.post("/addproperty", propertyUpload.array("images", 10), addproperty);
 Adminrouter.put("/updateproperty/:id", propertyUpload.array("images", 10), updateProperty);
 Adminrouter.delete("/deleteproperty/:id",deleteProperty)
-Adminrouter.get("/getproperty",getProperty)
-Adminrouter.get("/users",getUsers)
-Adminrouter.get("/bookings",getBookings)
+Adminrouter.get("/getproperty",verifyAdmin,getProperty)
+Adminrouter.get("/users",verifyAdmin,getUsers)
+Adminrouter.get("/bookings",verifyAdmin,getBookings)
+Adminrouter.post("/register",adminRegister)
+Adminrouter.post("/login",adminLogin)
 
 // Adminrouter.get('/stats', getDashboardStats);
 // Adminrouter.get('/monthly-revenue', getMonthlyRevenue);
@@ -65,6 +67,6 @@ Adminrouter.get("/bookings",getBookings)
 // Adminrouter.get('/recent-bookings', getRecentBookings);
 // Adminrouter.get('/top-locations', getTopLocations);
 
-Adminrouter.get('/data', getDashboardData);
+Adminrouter.get('/data',verifyAdmin, getDashboardData);
 
 export default Adminrouter;
