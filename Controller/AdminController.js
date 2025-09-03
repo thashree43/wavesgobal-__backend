@@ -92,6 +92,56 @@ export const adminLogin = async (req, res) => {
 };
 
 
+export const getAdmin = async (req, res) => {
+  try {
+    const adminId = req.admin.id; 
+
+    const admin = await adminModel.findById(adminId).select("-password");
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    res.status(200).json({ success: true, admin });
+  } catch (error) {
+    console.error("Error in getAdmin:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+export const changePass = async (req, res) => {
+  try {
+    const adminId = req.admin.id; 
+    const { currentPassword, newPassword } = req.body;
+    console.log("kl",adminId,currentPassword,newPassword)
+
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Old and new passwords are required" });
+    }
+
+    const admin = await adminModel.findById(adminId);
+    if (!admin) {
+      return res.status(404).json({ message: "Admin not found" });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, admin.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: "Old password is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    admin.password = hashedPassword;
+    await admin.save();
+console.log("pass changed")
+    res.status(200).json({ success: true, message: "Password changed successfully" });
+  } catch (error) {
+    console.error("Error in changePass:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+
 
 export const addLocation = async (req, res) => {
     try {  
