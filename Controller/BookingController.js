@@ -7,29 +7,35 @@ import crypto from "crypto";
 
 export const createBooking = async (req, res) => {
   try {
-    const { userId, propertyId, checkIn, checkOut, guests, nights, totalPrice, guestDetails } = req.body;
+    console.log(req.body)
+    const { userId, propertyId, checkinDate, checkoutDate, guests, nights, totalPrice, } = req.body;
 
     const user = await UserModel.findById(userId).select("-password");
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const property = await PropertyModel.findById(propertyId);
+
     if (!property) return res.status(404).json({ message: "Property not found" });
 
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-
+  
     const booking = await BookingModel.create({
       user: userId,
       property: propertyId,
-      checkIn,
-      checkOut,
+      checkIn:checkinDate,
+      checkOut:checkoutDate,
       guests,
       nights,
       totalPrice,
-      guestDetails,
       bookingStatus: "pending",
       paymentStatus: "pending",
       expiresAt,
     });
+    console.log("first")
+
+
+    console.log(booking)
 
     await UserModel.findByIdAndUpdate(userId, { $push: { bookings: booking._id } });
     await PropertyModel.findByIdAndUpdate(propertyId, { $push: { bookings: booking._id } });
