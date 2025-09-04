@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,VerifyOtp,ResendOtp,userlogout, getUser, updateuser, updatePass} from "../Controller/AuthController.js"
 import {getLocation, getproperties, getproperty} from "../Controller/Propertiescontroller.js"
-import { bookingbyuser, createBooking,getCheckout} from "../Controller/BookingController.js";
+import { bookingbyuser, createBooking,createRazorpayOrder,getCheckout, verifyPayment} from "../Controller/BookingController.js";
 import { googleAuth } from "../Controller/GoogleAuthController.js";
 
 dotenv.config();
@@ -26,6 +26,8 @@ router.post("/add-booking",createBooking)
 router.get('/checkout',getCheckout);
 router.post("/google-auth", googleAuth);
 router.get("/get-booking",bookingbyuser)
+router.post("/create-order", createRazorpayOrder);
+router.post("/verify-payment", verifyPayment);
 
   
 export default router;
