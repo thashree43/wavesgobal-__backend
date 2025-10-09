@@ -45,35 +45,15 @@ export const UserRegister = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new UserModel({ name: username, email, mobile: phone, password: hashedPassword });
     await newUser.save();
-    const otp = crypto.randomInt(100000, 999999);
-    console.log("the after otp line",otp)
-    await OtpModel.create({ email, otp, expiresAt: Date.now() + 60 * 1000 });
-    await sendEmail(email, "Your OTP Code", `Your OTP is: ${otp}`);
-    console.log("the otp is sending ")
-    console.log("workinn")
-    res.status(201).json({ message: "OTP sent to your email", email });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-export const VerifyOtp = async (req, res) => {
-  try {
-    const { email, otp } = req.body;
-    const otpRecord = await OtpModel.findOne({ email, otp });
-    if (!otpRecord) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-    if (otpRecord.expiresAt < Date.now()) {
-      return res.status(400).json({ message: "OTP expired" });
-    }
-    await OtpModel.deleteOne({ email });
-    const user = await UserModel.findOne({ email });
-    if (user) {
-      user.isVerified = true;
-      await user.save();
-    }
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    // const otp = crypto.randomInt(100000, 999999);
+    // console.log("the after otp line",otp)
+    // await OtpModel.create({ email, otp, expiresAt: Date.now() + 60 * 1000 });
+    // await sendEmail(email, "Your OTP Code", `Your OTP is: ${otp}`);
+    // console.log("the otp is sending ")
+    // console.log("workinn")
+    // res.status(201).json({ message: "OTP sent to your email", email });
+    
+    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
     res.cookie("usertoken", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production", 
@@ -82,11 +62,42 @@ export const VerifyOtp = async (req, res) => {
       path: "/"
     });
     
-    res.status(200).json({ message: "OTP verified, logged in", user });
+    res.status(201).json({ message: "Registration successful", user: newUser, token });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
+// export const VerifyOtp = async (req, res) => {
+//   try {
+//     const { email, otp } = req.body;
+//     const otpRecord = await OtpModel.findOne({ email, otp });
+//     if (!otpRecord) {
+//       return res.status(400).json({ message: "Invalid OTP" });
+//     }
+//     if (otpRecord.expiresAt < Date.now()) {
+//       return res.status(400).json({ message: "OTP expired" });
+//     }
+//     await OtpModel.deleteOne({ email });
+//     const user = await UserModel.findOne({ email });
+//     if (user) {
+//       user.isVerified = true;
+//       await user.save();
+//     }
+//     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
+//     res.cookie("usertoken", token, {
+//       httpOnly: true,
+//       secure: process.env.NODE_ENV === "production", 
+//       sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+//       maxAge: 30 * 24 * 60 * 60 * 1000,
+//       path: "/"
+//     });
+    
+//     res.status(200).json({ message: "OTP verified, logged in", user });
+//   } catch (error) {
+//     res.status(500).json({ message: "Server error", error: error.message });
+//   }
+// };
 
 export const getUser = async (req, res) => {
   try {
@@ -102,17 +113,17 @@ export const getUser = async (req, res) => {
   }
 };
 
-export const ResendOtp = async (req, res) => {
-  try {
-    const { email } = req.body;
-    const otp = crypto.randomInt(100000, 999999);
-    await OtpModel.findOneAndUpdate({ email }, { otp, expiresAt: Date.now() + 60 * 1000 }, { upsert: true });
-    await sendEmail(email, "Your OTP Code", `Your new OTP is: ${otp}`);
-    res.status(200).json({ message: "New OTP sent" });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
+// export const ResendOtp = async (req, res) => {
+//   try {
+//     const { email } = req.body;
+//     const otp = crypto.randomInt(100000, 999999);
+//     await OtpModel.findOneAndUpdate({ email }, { otp, expiresAt: Date.now() + 60 * 1000 }, { upsert: true });
+//     await sendEmail(email, "Your OTP Code", `Your new OTP is: ${otp}`);
+//     res.status(200).json({ message: "New OTP sent" });
+//   } catch (error) {
+//     res.status(500).json({ message: "Server error", error: error.message });
+//   }
+// };
 
 export const userlogout = async (req, res) => {
   try {
@@ -176,6 +187,7 @@ export const updatePass = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -215,7 +227,7 @@ export const forgotPassword = async (req, res) => {
           </a>
         </div>
         <p style="font-size: 14px; color: #333;">This link will expire in 15 minutes for security reasons.</p>
-        <p style="font-size: 14px; color: #333;">If you didn’t request this password reset, please ignore this email.</p>
+        <p style="font-size: 14px; color: #333;">If you didn't request this password reset, please ignore this email.</p>
         <p style="font-size: 14px; color: #333;">Best regards,<br>Waves Global Team</p>
       </div>
     `;
@@ -228,6 +240,7 @@ export const forgotPassword = async (req, res) => {
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 export const validateResetToken = async (req, res) => {
   try {
     const { token } = req.params;
@@ -294,7 +307,6 @@ export const resetPassword = async (req, res) => {
   }
 };
 
-
 const file = (req,res)=>{
-  console.log("kl")
+  console.log("k")
 }
