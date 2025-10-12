@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
-import {Userlogin,UserRegister,userlogout, getUser, updateuser, updatePass, forgotPassword, validateResetToken, resetPassword} from "../Controller/AuthController.js"
+import {Userlogin,UserRegister,userlogout, getUser, updateuser, updatePass, forgotPassword, validateResetToken, resetPassword, VerifyOtp, ResendOtp} from "../Controller/AuthController.js"
 import {getLocation, getproperties, getproperty} from "../Controller/Propertiescontroller.js"
 import { bookingbyuser, createBooking,createRazorpayOrder,getCheckout, verifyPayment} from "../Controller/BookingController.js";
 import { googleAuth } from "../Controller/GoogleAuthController.js";
@@ -12,8 +12,8 @@ const router = express.Router();
 
 router.post("/login",Userlogin)
 router.post("/register",UserRegister)
-// router.post("/verify-otp",VerifyOtp)
-// router.post("/resend-otp",ResendOtp)
+router.post("/verify-otp",VerifyOtp)
+router.post("/resend-otp",ResendOtp)
 router.post("/logout",userlogout)
 router.get("/getuser",getUser)
 router.put("/updateuser",updateuser)
