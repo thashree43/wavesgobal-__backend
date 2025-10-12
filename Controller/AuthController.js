@@ -99,7 +99,7 @@ export const UserRegister = async (req, res) => {
     const emailSubject = "Email Verification OTP";
     const emailMessage = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #e67300; font-size: 20px; margin-bottom: 20px;">Welcome to Waves Global!</h2>
+        <h2 style="color: #e67300; font-size: 20px; margin-bottom: 20px;">Welcome to Wavescation!</h2>
         <p style="font-size: 14px; color: #333;">Hello ${username},</p>
         <p style="font-size: 14px; color: #333;">Thank you for registering. Your verification code is:</p>
         <div style="text-align: center; margin: 30px 0;">
@@ -109,7 +109,7 @@ export const UserRegister = async (req, res) => {
         </div>
         <p style="font-size: 14px; color: #333;">This code will expire in 10 minutes.</p>
         <p style="font-size: 14px; color: #333;">If you didn't request this verification, please ignore this email.</p>
-        <p style="font-size: 14px; color: #333;">Best regards,<br>Waves Global Team</p>
+        <p style="font-size: 14px; color: #333;">Best regards,<br>Wavescation Team</p>
       </div>
     `;
     
@@ -239,7 +239,7 @@ export const ResendOtp = async (req, res) => {
           </div>
         </div>
         <p style="font-size: 14px; color: #333;">This code will expire in 10 minutes.</p>
-        <p style="font-size: 14px; color: #333;">Best regards,<br>Waves Global Team</p>
+        <p style="font-size: 14px; color: #333;">Best regards,<br>Wavescation Team</p>
       </div>
     `;
     
@@ -381,7 +381,7 @@ export const forgotPassword = async (req, res) => {
         </div>
         <p style="font-size: 14px; color: #333;">This link will expire in 15 minutes for security reasons.</p>
         <p style="font-size: 14px; color: #333;">If you didn't request this password reset, please ignore this email.</p>
-        <p style="font-size: 14px; color: #333;">Best regards,<br>Waves Global Team</p>
+        <p style="font-size: 14px; color: #333;">Best regards,<br>Wavescation Team</p>
       </div>
     `;
 
