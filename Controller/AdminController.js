@@ -569,3 +569,20 @@ export const getBookings = async(req,res)=>{
     
   }
 }
+
+
+export const adminLogout = async (req, res) => {
+  try {
+    res.clearCookie("admintoken", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Lax",
+      path: "/",
+    });
+
+    res.status(200).json({ success: true, message: "Admin logged out successfully" });
+  } catch (error) {
+    console.error("Logout Error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
