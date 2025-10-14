@@ -3,7 +3,7 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import { S3Client } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
-import { UpdateLocation, addLocation, addproperty, adminLogin, adminRegister, changePass, deleteProperty, getAdmin, getBookings, getProperty, getUsers, getlocation, updateProperty } from "../Controller/AdminController.js";
+import { UpdateLocation, addLocation, addproperty, adminLogin, adminLogout, adminRegister, changePass, deleteProperty, getAdmin, getBookings, getProperty, getUsers, getlocation, updateProperty } from "../Controller/AdminController.js";
 import { getBookingStatus, getDashboardData, getDashboardStats, getMonthlyRevenue, getPropertyTypes, getRecentBookings, getTopLocations, getUserGrowth } from "./DashboardController.js";
 import { verifyAdmin } from "../Middleware/AuthMiddleware.js";
 dotenv.config();
@@ -60,6 +60,7 @@ Adminrouter.post("/register",adminRegister)
 Adminrouter.post("/login",adminLogin)
 Adminrouter.get("/me", verifyAdmin, getAdmin);
 Adminrouter.put("/change-password", verifyAdmin, changePass);
+Adminrouter.post('/logout',adminLogout)
 
 // Adminrouter.get('/stats', getDashboardStats);
 // Adminrouter.get('/monthly-revenue', getMonthlyRevenue);
