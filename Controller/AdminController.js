@@ -6,10 +6,6 @@ import UserModel from "../Models/UserModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
-
-
-
-
 export const adminRegister = async (req, res) => {
   try {
     console.log(req.body)
@@ -71,7 +67,6 @@ export const adminLogin = async (req, res) => {
       { expiresIn: "30d" }
     );
     
-
     res.cookie("admintoken", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -91,12 +86,11 @@ export const adminLogin = async (req, res) => {
   }
 };
 
-
 export const getAdmin = async (req, res) => {
   try {
     const adminId = req.admin.id; 
 
-    const admin = await adminModel.findById(adminId).select("-password");
+    const admin = await adminModel.findById(adminId).select("-password").lean();
     if (!admin) {
       return res.status(404).json({ message: "Admin not found" });
     }
@@ -113,7 +107,6 @@ export const changePass = async (req, res) => {
     const adminId = req.admin.id; 
     const { currentPassword, newPassword } = req.body;
     console.log("kl",adminId,currentPassword,newPassword)
-
 
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: "Old and new passwords are required" });
@@ -132,7 +125,7 @@ export const changePass = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     admin.password = hashedPassword;
     await admin.save();
-console.log("pass changed")
+    console.log("pass changed")
     res.status(200).json({ success: true, message: "Password changed successfully" });
   } catch (error) {
     console.error("Error in changePass:", error);
@@ -140,21 +133,16 @@ console.log("pass changed")
   }
 };
 
-
-
-
 export const addLocation = async (req, res) => {
     try {  
       const {name,description,status} = req.body
       const image = req.file?.location;  
 
-      const existlocation = await locationmodel.findOne({name})
+      const existlocation = await locationmodel.findOne({name}).lean();
 
       if(existlocation){
         res.status(400).json({message:"name is already existed"})
-
       }else{
-
         const newlocation = new locationmodel({
             name,
             description,
@@ -165,18 +153,20 @@ export const addLocation = async (req, res) => {
         const savelocation = await newlocation.save()
         res.status(200).json({ message: "Location added successfully" });
       }
-
     } catch (error) {
       console.error("Error in addLocation:", error);
       res.status(500).json({ error: "Internal Server Error" });
     }
   };
 
-
-  export const getlocation = async(req,res)=>{
+export const getlocation = async(req,res)=>{
     try {
         const location = await locationmodel.find()
-        if(!location){
+          .select('name description image status createdAt')
+          .lean()
+          .sort({ createdAt: -1 });
+        
+        if(!location || location.length === 0){
             res.status(404).json({message:"no location found"})
         }else{
             res.status(200).json({success:true,location})
@@ -187,7 +177,6 @@ export const addLocation = async (req, res) => {
     }
 }
   
-
 export const UpdateLocation = async (req, res) => {
   try {
     const { id, name, description, status } = req.body;
@@ -205,7 +194,7 @@ export const UpdateLocation = async (req, res) => {
         status,
         ...(image && { image })  
       },
-      { new: true } 
+      { new: true, lean: true } 
     );
 
     if (!updatedLocation) {
@@ -216,17 +205,11 @@ export const UpdateLocation = async (req, res) => {
       message: "Location updated successfully",
       location: updatedLocation
     });
-
   } catch (error) {
     console.error("Error in UpdateLocation:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 };
-
-
-
-
-
 
 export const addproperty = async (req, res) => {
   try {
@@ -258,7 +241,7 @@ export const addproperty = async (req, res) => {
       id: file.filename
     })) : [];
 
-    const existProperty = await PropertyModel.findOne({ title });
+    const existProperty = await PropertyModel.findOne({ title }).lean();
     if (existProperty) {
       return res.status(400).json({ message: "Property already exists" });
     }
@@ -358,7 +341,6 @@ export const addproperty = async (req, res) => {
       message: "Property added successfully", 
       property: savedProperty 
     });
-     
   } catch (error) {
     console.error("Error adding property:", error);
     res.status(500).json({ message: "Server error" });
@@ -368,8 +350,10 @@ export const addproperty = async (req, res) => {
 export const getProperty = async (req, res) => {
   try {
     const properties = await PropertyModel.find()
+      .select('title description type neighborhood location mapLocation price area bedrooms bathrooms guests beds propertyHighlights amenities roomsAndSpaces nearbyAttractions houseRules extraServices images status createdAt')
       .populate('neighborhood', 'name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     if (!properties || properties.length === 0) {
       return res.status(404).json({ message: "No properties found" });
@@ -476,7 +460,7 @@ export const updateProperty = async (req, res) => {
     const updatedProperty = await PropertyModel.findByIdAndUpdate(
       id,
       updateData,
-      { new: true }
+      { new: true, lean: true }
     )
 
     if (!updatedProperty) {
@@ -494,8 +478,6 @@ export const updateProperty = async (req, res) => {
   }
 }
 
-
-
 export const deleteProperty = async (req, res) => {
   try {
     const { id } = req.params;
@@ -506,7 +488,6 @@ export const deleteProperty = async (req, res) => {
     if (!deletedProperty) {
       return res.status(404).json({ message: "Property not found" });
     }
-
 
     res.status(200).json({ 
       success: true, 
@@ -523,7 +504,8 @@ export const getPropertyById = async (req, res) => {
     const { id } = req.params;
 
     const property = await PropertyModel.findById(id)
-      .populate('neighborhood', 'name');
+      .populate('neighborhood', 'name')
+      .lean();
 
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
@@ -539,37 +521,64 @@ export const getPropertyById = async (req, res) => {
   }
 };
 
-
 export const getUsers = async(req,res)=>{
   try {
-    console.log("fusereirst")
     const users = await UserModel.find()
+      .select('name email mobile createdAt isBlocked isVerified')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    if(!users){
+    if(!users || users.length === 0){
       res.status(404).json({message:"Users not found"})
+    } else {
+      res.status(200).json(users)
     }
-    res.status(200).json(users)
   } catch (error) {
-    res.status(500).json({messag:"Internal server error"})
-
-
+    res.status(500).json({message:"Internal server error"})
   }
 }
 
+export const blockUnblockUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isBlocked } = req.body;
 
+    const user = await UserModel.findByIdAndUpdate(
+      userId,
+      { isBlocked },
+      { new: true, lean: true }
+    ).select('name email isBlocked');
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `User ${isBlocked ? 'blocked' : 'unblocked'} successfully`,
+      user
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
 
 export const getBookings = async(req,res)=>{
   try {
-    const bookings = await BookingModel.find({bookingStatus:"confirmed"}).populate("user", "name email phone")
-    .populate("property", "name location type");
+    const bookings = await BookingModel.find({bookingStatus:"confirmed"})
+      .populate("user", "name email phone")
+      .populate("property", "name location type")
+      .select('user property bookingStatus checkIn checkOut totalPrice createdAt')
+      .sort({ createdAt: -1 })
+      .lean();
+    
     console.log(bookings)
-
     res.status(200).json(bookings)
   } catch (error) {
-    
+    res.status(500).json({message:"Internal server error"})
   }
 }
-
 
 export const adminLogout = async (req, res) => {
   try {
