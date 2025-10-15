@@ -12,11 +12,12 @@ export const Userlogin = async (req, res) => {
     if (!email || !password) {
       return res.status(403).json({ message: "Email and password are required" });
     }
+
     const user = await UserModel.findOne({ email });
     if (!user) {
       return res.status(409).json({ message: "This user doesn't exist" });
     }
-    
+
     if (!user.isVerified) {
       return res.status(403).json({ message: "Please verify your email first" });
     }
@@ -24,41 +25,42 @@ export const Userlogin = async (req, res) => {
     if (user.isBlocked) {
       return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
     }
-    
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
-    
     const isProduction = process.env.NODE_ENV === "production";
-    
+
     res.cookie("usertoken", token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      secure: true, 
+      sameSite: "None", 
       maxAge: 30 * 24 * 60 * 60 * 1000,
       path: "/",
-      domain: isProduction ? process.env.COOKIE_DOMAIN : undefined
+      domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
     });
-    
+
     const userResponse = {
       _id: user._id,
       name: user.name,
       email: user.email,
-      mobile: user.mobile
+      mobile: user.mobile,
     };
-    
-    res.status(200).json({ 
-      message: "Successfully logged in", 
-      token, 
+
+    return res.status(200).json({
+      message: "Successfully logged in",
       user: userResponse,
-      success: true 
+      success: true,
     });
   } catch (error) {
+    console.error("Login error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 export const UserRegister = async (req, res) => {
   try {
@@ -145,64 +147,60 @@ export const UserRegister = async (req, res) => {
 export const VerifyOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
-    
+
     if (!email || !otp) {
       return res.status(400).json({ message: "Email and OTP are required" });
     }
-    
+
     const otpRecord = await OtpModel.findOne({ email, otp: parseInt(otp) });
     if (!otpRecord) {
       return res.status(400).json({ message: "Invalid OTP" });
     }
-    
+
     if (otpRecord.expiresAt < Date.now()) {
       await OtpModel.deleteOne({ email });
       return res.status(400).json({ message: "OTP expired" });
     }
-    
+
     const user = await UserModel.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     user.isVerified = true;
     await user.save();
-    
     await OtpModel.deleteOne({ email });
-    
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "30d" });
-    
     const isProduction = process.env.NODE_ENV === "production";
-    
+
     res.cookie("usertoken", token, {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      secure: true, 
+      sameSite: "None", 
       maxAge: 30 * 24 * 60 * 60 * 1000,
       path: "/",
-      domain: isProduction ? process.env.COOKIE_DOMAIN : undefined
+      domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
     });
-    
+
     const userResponse = {
       _id: user._id,
       name: user.name,
       email: user.email,
-      mobile: user.mobile
+      mobile: user.mobile,
     };
-    
-    console.log("User verified successfully:", email);
-    
-    res.status(200).json({ 
-      message: "OTP verified, registration successful", 
+
+    return res.status(200).json({
+      message: "OTP verified, registration successful",
       user: userResponse,
-      token,
-      success: true 
+      success: true,
     });
   } catch (error) {
     console.error("OTP verification error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 export const ResendOtp = async (req, res) => {
   try {
@@ -292,19 +290,22 @@ export const getUser = async (req, res) => {
 export const userlogout = async (req, res) => {
   try {
     const isProduction = process.env.NODE_ENV === "production";
-    
+
     res.clearCookie("usertoken", {
       httpOnly: true,
-      secure: isProduction,
-      sameSite: isProduction ? "None" : "Lax",
+      secure: true, 
+      sameSite: "None", 
       path: "/",
-      domain: isProduction ? process.env.COOKIE_DOMAIN : undefined
+      domain: isProduction ? process.env.COOKIE_DOMAIN : undefined,
     });
+
     return res.status(200).json({ message: "Logged out successfully", success: true });
   } catch (error) {
+    console.error("Logout error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 export const updateuser = async(req,res)=>{
   try {
