@@ -23,7 +23,8 @@ export const googleAuth = async (req, res) => {
           email,
           password: "",
           profilePic: picture,
-          isGoogleUser: true
+          isGoogleUser: true,
+          isVerified:true
         });
       }
       
