@@ -20,6 +20,10 @@ export const Userlogin = async (req, res) => {
     if (!user.isVerified) {
       return res.status(403).json({ message: "Please verify your email first" });
     }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
+    }
     
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -80,7 +84,8 @@ export const UserRegister = async (req, res) => {
       email, 
       mobile: phone, 
       password: hashedPassword,
-      isVerified: false 
+      isVerified: false,
+      isBlocked: false
     });
     await newUser.save();
     
@@ -269,6 +274,15 @@ export const getUser = async (req, res) => {
     }
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await UserModel.findById(decoded.id).select("-password");
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked" });
+    }
+
     res.status(200).json({ user, success: true });
   } catch (error) {
     res.status(401).json({ message: "Invalid or expired token" });
@@ -304,6 +318,11 @@ export const updateuser = async(req,res)=>{
     if(!user){
       return res.status(404).json({message:"User not found"});
     }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked" });
+    }
+
     if(name)user.name = name;
     if(mobile)user.mobile = mobile;
     await user.save();
@@ -325,6 +344,11 @@ export const updatePass = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked" });
+    }
+
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({ message: "Current password is incorrect" });
@@ -352,6 +376,10 @@ export const forgotPassword = async (req, res) => {
     const user = await UserModel.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User with this email does not exist" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
     }
 
     await PasswordResetModel.deleteMany({ email });
@@ -455,6 +483,10 @@ export const resetPassword = async (req, res) => {
     const user = await UserModel.findOne({ email: resetRecord.email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.isBlocked) {
+      return res.status(403).json({ message: "Your account has been blocked. Please contact support." });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
