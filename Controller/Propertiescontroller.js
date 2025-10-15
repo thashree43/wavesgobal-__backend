@@ -5,11 +5,29 @@ import locationmodel from "../Models/LocationModel.js";
 
 export const getLocation = async (req, res) => {
   try {
-    const location = await locationmodel.find({ status: "active" });
-    if (!location) {
+    const locations = await locationmodel
+      .find({ status: "active" })
+      .select("name _id image")
+      .lean();
+    
+    if (!locations || locations.length === 0) {
       return res.status(404).json({ message: "Location not found" });
     }
-    res.status(200).json({ success: true, location });
+
+    const locationsWithPropertyCount = await Promise.all(
+      locations.map(async (location) => {
+        const propertyCount = await PropertyModel.countDocuments({
+          neighborhood: location._id,
+          status: true
+        });
+        return {
+          ...location,
+          properties: propertyCount
+        };
+      })
+    );
+
+    res.status(200).json({ success: true, location: locationsWithPropertyCount });
   } catch (error) {
     res.status(500).json({ message: "Internal server error" });
     console.error(error);
@@ -18,48 +36,51 @@ export const getLocation = async (req, res) => {
 
 export const getproperties = async (req, res) => {
   try {
-
-
-    console.log("first")
     const {
       checkin,
       checkout,
       location,
       locationId,
       guests,
+      adults,
+      children,
+      infants,
       priceMin,
       priceMax,
       propertyType,
       bedrooms,
       bathrooms,
       minArea,
+      page = 1,
+      limit = 12,
     } = req.query;
 
-    console.log("l;llklkl",locationId)
-
-
-    let filter = {};
+    let filter = { status: true };
 
     if (location) {
       filter.location = { $regex: location, $options: "i" };
-      if (guests) filter.guests = { $gte: Number(guests) };
-    } else {
-      if (locationId) {
-        if (mongoose.Types.ObjectId.isValid(locationId)) {
-          filter.neighborhood = new mongoose.Types.ObjectId(locationId);
-        }
-      }
-      if (priceMin || priceMax) {
-        filter.price = {};
-        if (priceMin) filter.price.$gte = Number(priceMin);
-        if (priceMax) filter.price.$lte = Number(priceMax);
-      }
-      if (propertyType) filter.type = propertyType;
-      if (bedrooms) filter.bedrooms = { $gte: Number(bedrooms) };
-      if (bathrooms) filter.bathrooms = { $gte: Number(bathrooms) };
-      if (guests) filter.guests = { $gte: Number(guests) };
-      if (minArea) filter.area = { $gte: Number(minArea) };
     }
+
+    if (locationId && mongoose.Types.ObjectId.isValid(locationId)) {
+      filter.neighborhood = new mongoose.Types.ObjectId(locationId);
+    }
+
+    if (priceMin || priceMax) {
+      filter.price = {};
+      if (priceMin) filter.price.$gte = Number(priceMin);
+      if (priceMax) filter.price.$lte = Number(priceMax);
+    }
+
+    if (propertyType) filter.type = propertyType;
+    if (bedrooms) filter.bedrooms = { $gte: Number(bedrooms) };
+    if (bathrooms) filter.bathrooms = { $gte: Number(bathrooms) };
+
+    const totalGuests = Number(adults || guests || 0) + Number(children || 0) + Number(infants || 0);
+    if (totalGuests > 0) {
+      filter.guests = { $gte: totalGuests };
+    }
+
+    if (minArea) filter.area = { $gte: Number(minArea) };
 
     let unavailablePropertyIds = [];
 
@@ -74,7 +95,9 @@ export const getproperties = async (req, res) => {
             checkOut: { $gte: checkInDate },
           },
         ],
-      }).select("property");
+      })
+        .select("property")
+        .lean();
 
       unavailablePropertyIds = overlappingBookings.map(
         (booking) => booking.property
@@ -85,13 +108,27 @@ export const getproperties = async (req, res) => {
       }
     }
 
-    const properties = await PropertyModel.find(filter)
-      .populate("neighborhood")
-      .sort({ createdAt: -1 });
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [properties, totalCount] = await Promise.all([
+      PropertyModel.find(filter)
+        .select(
+          "title type price bedrooms bathrooms guests area location images propertyHighlights amenities createdAt neighborhood status"
+        )
+        .populate("neighborhood", "name")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      PropertyModel.countDocuments(filter),
+    ]);
 
     res.status(200).json({
       success: true,
       count: properties.length,
+      totalCount,
+      totalPages: Math.ceil(totalCount / parseInt(limit)),
+      currentPage: parseInt(page),
       data: properties,
     });
   } catch (error) {
@@ -110,7 +147,9 @@ export const getproperty = async (req, res) => {
     if (!id) {
       return res.status(400).json({ message: "Property ID is required" });
     }
-    const property = await PropertyModel.findById(id).populate("bookings");
+    const property = await PropertyModel.findById(id)
+      .populate("bookings")
+      .lean();
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
