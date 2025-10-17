@@ -33,7 +33,6 @@ export const getLocation = async (req, res) => {
     console.error(error);
   }
 };
-
 export const getproperties = async (req, res) => {
   try {
     const {
@@ -66,9 +65,12 @@ export const getproperties = async (req, res) => {
     }
 
     if (priceMin || priceMax) {
-      filter.price = {};
-      if (priceMin) filter.price.$gte = Number(priceMin);
-      if (priceMax) filter.price.$lte = Number(priceMax);
+      filter.$or = [
+        { 'pricing.night': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } },
+        { 'pricing.week': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } },
+        { 'pricing.month': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } },
+        { 'pricing.year': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } }
+      ];
     }
 
     if (propertyType) filter.type = propertyType;
@@ -86,25 +88,53 @@ export const getproperties = async (req, res) => {
 
     if (checkin && checkout) {
       const checkInDate = new Date(checkin);
+      checkInDate.setHours(0, 0, 0, 0);
+      
       const checkOutDate = new Date(checkout);
+      checkOutDate.setHours(0, 0, 0, 0);
 
       const overlappingBookings = await BookingModel.find({
+        bookingStatus: "confirmed",
         $or: [
           {
-            checkIn: { $lte: checkOutDate },
-            checkOut: { $gte: checkInDate },
+            checkIn: { $gte: checkin, $lt: checkout }
           },
+          {
+            checkOut: { $gt: checkin, $lte: checkout }
+          },
+          {
+            checkIn: { $lte: checkin },
+            checkOut: { $gte: checkout }
+          },
+          {
+            checkIn: { $gte: checkin },
+            checkOut: { $lte: checkout }
+          }
         ],
       })
-        .select("property")
+        .select("property checkIn checkOut")
         .lean();
 
-      unavailablePropertyIds = overlappingBookings.map(
-        (booking) => booking.property
-      );
+      const propertiesWithBlockedDates = await PropertyModel.find({
+        'availability.unavailableDates': {
+          $elemMatch: {
+            $or: [
+              { checkIn: { $gte: checkin, $lt: checkout } },
+              { checkOut: { $gt: checkin, $lte: checkout } },
+              { checkIn: { $lte: checkin }, checkOut: { $gte: checkout } },
+              { checkIn: { $gte: checkin }, checkOut: { $lte: checkout } }
+            ]
+          }
+        }
+      }).select('_id').lean();
+
+      const bookingPropertyIds = overlappingBookings.map((booking) => booking.property.toString());
+      const blockedPropertyIds = propertiesWithBlockedDates.map(p => p._id.toString());
+      
+      unavailablePropertyIds = [...new Set([...bookingPropertyIds, ...blockedPropertyIds])];
 
       if (unavailablePropertyIds.length > 0) {
-        filter._id = { $nin: unavailablePropertyIds };
+        filter._id = { $nin: unavailablePropertyIds.map(id => new mongoose.Types.ObjectId(id)) };
       }
     }
 
@@ -113,7 +143,7 @@ export const getproperties = async (req, res) => {
     const [properties, totalCount] = await Promise.all([
       PropertyModel.find(filter)
         .select(
-          "title type price bedrooms bathrooms guests area location images propertyHighlights amenities createdAt neighborhood status"
+          "title type pricing bedrooms bathrooms guests area location images propertyHighlights amenities createdAt neighborhood status ratings"
         )
         .populate("neighborhood", "name")
         .sort({ createdAt: -1 })
@@ -147,12 +177,22 @@ export const getproperty = async (req, res) => {
     if (!id) {
       return res.status(400).json({ message: "Property ID is required" });
     }
+    
     const property = await PropertyModel.findById(id)
+      .populate("neighborhood", "name")
+      .populate({
+        path: "reviews",
+        match: { status: "active" },
+        options: { sort: "-createdAt", limit: 10 },
+        populate: { path: "user", select: "name email" }
+      })
       .populate("bookings")
       .lean();
+      
     if (!property) {
       return res.status(404).json({ message: "Property not found" });
     }
+    
     return res.status(200).json({ success: true, property });
   } catch (error) {
     console.error(error);

@@ -3,7 +3,7 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import { S3Client } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
-import { UpdateLocation, addLocation, addproperty, adminLogin, adminLogout, adminRegister, blockUnblockUser, changePass, deleteProperty, getAdmin, getBookings, getProperty, getUsers, getlocation, updateProperty } from "../Controller/AdminController.js";
+import { UpdateLocation, addLocation, addproperty, adminLogin, adminLogout, adminRegister, blockUnblockUser, cancelBooking, changePass, deleteProperty, deleteReview, getAdmin, getAllReviews, getBookings, getProperty, getReviewById, getUsers, getlocation, markChekout, updateProperty } from "../Controller/AdminController.js";
 import { getBookingStatus, getDashboardData, getDashboardStats, getMonthlyRevenue, getPropertyTypes, getRecentBookings, getTopLocations, getUserGrowth } from "./DashboardController.js";
 import { verifyAdmin } from "../Middleware/AuthMiddleware.js";
 dotenv.config();
@@ -62,7 +62,7 @@ Adminrouter.get("/me", verifyAdmin, getAdmin);
 Adminrouter.put("/change-password", verifyAdmin, changePass);
 Adminrouter.post('/logout',adminLogout)
 Adminrouter.put('/users/:userId/block', verifyAdmin, blockUnblockUser);
-
+Adminrouter.put('/update-checkout/:bookingId',markChekout)
 // Adminrouter.get('/stats', getDashboardStats);
 // Adminrouter.get('/monthly-revenue', getMonthlyRevenue);
 // Adminrouter.get('/user-growth', getUserGrowth);
@@ -70,8 +70,12 @@ Adminrouter.put('/users/:userId/block', verifyAdmin, blockUnblockUser);
 // Adminrouter.get('/booking-status', getBookingStatus);
 // Adminrouter.get('/recent-bookings', getRecentBookings);
 // Adminrouter.get('/top-locations', getTopLocations);
-
+Adminrouter.get('/reviews',verifyAdmin,getAllReviews)
+Adminrouter.get('/reviews/:reviewId',verifyAdmin,getReviewById)
 Adminrouter.get('/data',verifyAdmin, getDashboardData);
+Adminrouter.delete('/reviews/:reviewId',verifyAdmin, deleteReview);
+Adminrouter.put("/cancel-booking/:id", verifyAdmin, cancelBooking);
+
 
 
 export default Adminrouter;

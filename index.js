@@ -7,7 +7,8 @@ import Adminrouter from './Routes/AdminRoutes.js';
 import Userrouter from './Routes/UserRoutes.js';
 import databaseConnection from './utils/db.js';
 import cookieParser from 'cookie-parser';
-
+import nodeCron from 'node-cron';
+import './jobs/BookingClean.js'
 dotenv.config();
 databaseConnection();
 
