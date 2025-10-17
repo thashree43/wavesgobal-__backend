@@ -644,30 +644,39 @@ export const adminLogout = async (req, res) => {
 
 
 
-export const markChekout = async(req,res)=>{
+export const markChekout = async (req, res) => {
   try {
-    const {bookingId} = req.params 
-    const {checkedOut} = req.body
-
+    const { bookingId } = req.params;
+    const { checkedOut } = req.body;
+    
     const booking = await BookingModel.findByIdAndUpdate(
       bookingId,
-      {checkedOut},
-      {new:true,lean:true}
-    ).select('checkedOut')
-
-  if(!booking){
-    return res.status(404).json({ message: "Booking not found" });
+      { checkedOut },
+      { new: true }
+    ).select('checkedOut property');
+    
+    if (!booking) {
+      return res.status(404).json({ message: "Booking not found" });
+    }
+    
+    if (checkedOut && booking.property) {
+      await PropertyModel.findByIdAndUpdate(
+        booking.property,
+        { $pull: { bookings: booking._id } }
+      );
+    }
+    
+    res.status(200).json({
+      success: true,
+      message: `Booking checkout marked as ${checkedOut ? 'completed' : 'reverted'} successfully`,
+      booking,
+    });
+  } catch (error) {
+    console.error("Checkout update error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-  res.status(200).json({
-    success: true,
-    message: `Booking ${checkedOut ? 'true' : 'false'} successfully`,
-    booking
-  });
-} catch (error) {
-  console.error(error);
-  res.status(500).json({ message: "Internal server error" });
-}
 };
+
 
 
 export const getAllReviews = async (req, res) => {

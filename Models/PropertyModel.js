@@ -137,8 +137,8 @@ const propertySchema = new mongoose.Schema({
   availability: {
     unavailableDates: [
       {
-        checkIn: { type: Date },
-        checkOut: { type: Date }
+        checkIn: { type: String },
+        checkOut: { type: String }
       }
     ]
   },
