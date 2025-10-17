@@ -54,6 +54,8 @@ export const getproperties = async (req, res) => {
       limit = 12,
     } = req.query;
 
+    console.log('Search params:', { checkin, checkout, locationId, adults, children, infants });
+
     let filter = { status: true };
 
     if (location) {
@@ -87,51 +89,60 @@ export const getproperties = async (req, res) => {
     let unavailablePropertyIds = [];
 
     if (checkin && checkout) {
-      const checkInDate = new Date(checkin);
-      checkInDate.setHours(0, 0, 0, 0);
-      
-      const checkOutDate = new Date(checkout);
-      checkOutDate.setHours(0, 0, 0, 0);
+      console.log('Filtering by dates:', { checkin, checkout });
 
       const overlappingBookings = await BookingModel.find({
         bookingStatus: "confirmed",
         $or: [
           {
-            checkIn: { $gte: checkin, $lt: checkout }
-          },
-          {
-            checkOut: { $gt: checkin, $lte: checkout }
-          },
-          {
-            checkIn: { $lte: checkin },
-            checkOut: { $gte: checkout }
-          },
-          {
-            checkIn: { $gte: checkin },
-            checkOut: { $lte: checkout }
+            $and: [
+              { checkIn: { $lt: checkout } },
+              { checkOut: { $gt: checkin } }
+            ]
           }
         ],
       })
-        .select("property checkIn checkOut")
+        .select("property checkIn checkOut bookingStatus")
         .lean();
 
-      const propertiesWithBlockedDates = await PropertyModel.find({
-        'availability.unavailableDates': {
-          $elemMatch: {
-            $or: [
-              { checkIn: { $gte: checkin, $lt: checkout } },
-              { checkOut: { $gt: checkin, $lte: checkout } },
-              { checkIn: { $lte: checkin }, checkOut: { $gte: checkout } },
-              { checkIn: { $gte: checkin }, checkOut: { $lte: checkout } }
-            ]
-          }
-        }
-      }).select('_id').lean();
+      console.log('Found overlapping bookings:', overlappingBookings.length);
+      if (overlappingBookings.length > 0) {
+        console.log('Booking details:', overlappingBookings.map(b => ({
+          property: b.property,
+          checkIn: b.checkIn,
+          checkOut: b.checkOut
+        })));
+      }
+
+      const allProperties = await PropertyModel.find({
+        'availability.unavailableDates': { $exists: true, $ne: [] }
+      })
+        .select('_id title availability.unavailableDates')
+        .lean();
+
+      const propertiesWithBlockedDates = allProperties.filter(property => {
+        if (!property.availability || !property.availability.unavailableDates) return false;
+        
+        return property.availability.unavailableDates.some(blocked => {
+          return blocked.checkIn < checkout && blocked.checkOut > checkin;
+        });
+      });
+
+      console.log('Properties with blocked dates:', propertiesWithBlockedDates.length);
+      if (propertiesWithBlockedDates.length > 0) {
+        console.log('Blocked properties:', propertiesWithBlockedDates.map(p => ({
+          id: p._id,
+          title: p.title,
+          blockedDates: p.availability.unavailableDates
+        })));
+      }
 
       const bookingPropertyIds = overlappingBookings.map((booking) => booking.property.toString());
       const blockedPropertyIds = propertiesWithBlockedDates.map(p => p._id.toString());
       
       unavailablePropertyIds = [...new Set([...bookingPropertyIds, ...blockedPropertyIds])];
+      
+      console.log('Total unavailable properties:', unavailablePropertyIds.length);
 
       if (unavailablePropertyIds.length > 0) {
         filter._id = { $nin: unavailablePropertyIds.map(id => new mongoose.Types.ObjectId(id)) };
@@ -139,6 +150,8 @@ export const getproperties = async (req, res) => {
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    console.log('Final filter:', JSON.stringify(filter, null, 2));
 
     const [properties, totalCount] = await Promise.all([
       PropertyModel.find(filter)
@@ -152,6 +165,8 @@ export const getproperties = async (req, res) => {
         .lean(),
       PropertyModel.countDocuments(filter),
     ]);
+
+    console.log('Properties found:', properties.length, 'Total count:', totalCount);
 
     res.status(200).json({
       success: true,
