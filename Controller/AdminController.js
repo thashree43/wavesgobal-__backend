@@ -5,6 +5,7 @@ import PropertyModel from "../Models/PropertyModel.js";
 import UserModel from "../Models/UserModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import ReviewModel from "../Models/ReviewModel.js";
 
 export const adminRegister = async (req, res) => {
   try {
@@ -220,7 +221,8 @@ export const addproperty = async (req, res) => {
       neighborhood, 
       location, 
       mapLocation, 
-      price, 
+      pricing,
+      fees,
       area, 
       bedrooms, 
       bathrooms, 
@@ -248,6 +250,22 @@ export const addproperty = async (req, res) => {
 
     const parsedMapLocation = 
       typeof mapLocation === "string" ? JSON.parse(mapLocation) : mapLocation;
+
+    const parsedPricing = 
+      typeof pricing === "string" ? JSON.parse(pricing) : pricing || {};
+
+    if (!parsedPricing.night && !parsedPricing.week && !parsedPricing.month && !parsedPricing.year) {
+      return res.status(400).json({ message: "At least one pricing period is required" });
+    }
+
+    const parsedFees = 
+      typeof fees === "string" ? JSON.parse(fees) : fees || {
+        cleaningFee: 0,
+        serviceFee: 0,
+        cityTourismTax: 0,
+        vatGst: 0,
+        damageDeposit: 0
+      };
 
     const parsedPropertyHighlights = 
       typeof propertyHighlights === "string" ? JSON.parse(propertyHighlights) : propertyHighlights || [];
@@ -318,7 +336,8 @@ export const addproperty = async (req, res) => {
       neighborhood,
       location,
       mapLocation: parsedMapLocation,
-      price,
+      pricing: parsedPricing,
+      fees: parsedFees,
       area,
       bedrooms,
       bathrooms,
@@ -343,14 +362,14 @@ export const addproperty = async (req, res) => {
     });
   } catch (error) {
     console.error("Error adding property:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: error.message || "Server error" });
   }
 };
 
 export const getProperty = async (req, res) => {
   try {
     const properties = await PropertyModel.find()
-      .select('title description type neighborhood location mapLocation price area bedrooms bathrooms guests beds propertyHighlights amenities roomsAndSpaces nearbyAttractions houseRules extraServices images status createdAt')
+      .select('title description type neighborhood location mapLocation pricing fees area bedrooms bathrooms guests beds propertyHighlights amenities roomsAndSpaces nearbyAttractions houseRules extraServices images status createdAt')
       .populate('neighborhood', 'name')
       .sort({ createdAt: -1 })
       .lean();
@@ -359,30 +378,48 @@ export const getProperty = async (req, res) => {
       return res.status(404).json({ message: "No properties found" });
     }
 
-    const formattedProperties = properties.map(property => ({
-      id: property._id,
-      title: property.title,
-      description: property.description,
-      type: property.type,
-      neighborhood: property.neighborhood?.name || property.neighborhood,
-      location: property.location,
-      mapLocation: property.mapLocation,
-      price: `AED ${property.price?.toLocaleString()}`,
-      area: property.area ? `${property.area} sqft` : '',
-      bedrooms: property.bedrooms,
-      bathrooms: property.bathrooms,
-      guests: property.guests,
-      beds: property.beds,
-      propertyHighlights: property.propertyHighlights,
-      amenities: property.amenities,
-      roomsAndSpaces: property.roomsAndSpaces,
-      nearbyAttractions: property.nearbyAttractions,
-      houseRules: property.houseRules,
-      extraServices: property.extraServices,
-      images: property.images,
-      status: property.status ? 'Available' : 'Not Available',
-      addedDate: property.createdAt.toISOString().split('T')[0],
-    }));
+    const formattedProperties = properties.map(property => {
+      const pricingDisplay = {};
+      if (property.pricing?.night) pricingDisplay.night = `AED ${property.pricing.night.toLocaleString()}/night`;
+      if (property.pricing?.week) pricingDisplay.week = `AED ${property.pricing.week.toLocaleString()}/week`;
+      if (property.pricing?.month) pricingDisplay.month = `AED ${property.pricing.month.toLocaleString()}/month`;
+      if (property.pricing?.year) pricingDisplay.year = `AED ${property.pricing.year.toLocaleString()}/year`;
+
+      const feesDisplay = {};
+      if (property.fees?.cleaningFee) feesDisplay.cleaningFee = `AED ${property.fees.cleaningFee.toLocaleString()}`;
+      if (property.fees?.serviceFee) feesDisplay.serviceFee = `AED ${property.fees.serviceFee.toLocaleString()}`;
+      if (property.fees?.cityTourismTax) feesDisplay.cityTourismTax = `AED ${property.fees.cityTourismTax.toLocaleString()}`;
+      if (property.fees?.vatGst) feesDisplay.vatGst = `AED ${property.fees.vatGst.toLocaleString()}`;
+      if (property.fees?.damageDeposit) feesDisplay.damageDeposit = `AED ${property.fees.damageDeposit.toLocaleString()}`;
+
+      return {
+        id: property._id,
+        title: property.title,
+        description: property.description,
+        type: property.type,
+        neighborhood: property.neighborhood?.name || property.neighborhood,
+        location: property.location,
+        mapLocation: property.mapLocation,
+        pricing: property.pricing,
+        pricingDisplay: pricingDisplay,
+        fees: property.fees,
+        feesDisplay: feesDisplay,
+        area: property.area ? `${property.area} sqft` : '',
+        bedrooms: property.bedrooms,
+        bathrooms: property.bathrooms,
+        guests: property.guests,
+        beds: property.beds,
+        propertyHighlights: property.propertyHighlights,
+        amenities: property.amenities,
+        roomsAndSpaces: property.roomsAndSpaces,
+        nearbyAttractions: property.nearbyAttractions,
+        houseRules: property.houseRules,
+        extraServices: property.extraServices,
+        images: property.images,
+        status: property.status ? 'Available' : 'Not Available',
+        addedDate: property.createdAt.toISOString().split('T')[0],
+      };
+    });
 
     res.status(200).json({ 
       success: true, 
@@ -396,21 +433,31 @@ export const getProperty = async (req, res) => {
 
 export const updateProperty = async (req, res) => {
   try {
-    const { id } = req.params
-    const updateData = { ...req.body }
+    const { id } = req.params;
+    const updateData = { ...req.body };
 
     if (req.body.mapLocation) {
-      updateData.mapLocation = JSON.parse(req.body.mapLocation)
+      updateData.mapLocation = JSON.parse(req.body.mapLocation);
+    }
+    if (req.body.pricing) {
+      const parsedPricing = JSON.parse(req.body.pricing);
+      if (!parsedPricing.night && !parsedPricing.week && !parsedPricing.month && !parsedPricing.year) {
+        return res.status(400).json({ message: "At least one pricing period is required" });
+      }
+      updateData.pricing = parsedPricing;
+    }
+    if (req.body.fees) {
+      updateData.fees = JSON.parse(req.body.fees);
     }
     if (req.body.propertyHighlights) {
-      const parsed = JSON.parse(req.body.propertyHighlights)
+      const parsed = JSON.parse(req.body.propertyHighlights);
       updateData.propertyHighlights = parsed.map(highlight => ({
         name: highlight.name || '',
         icon: typeof highlight.icon === 'object' ? '' : (highlight.icon || '')
-      }))
+      }));
     }
     if (req.body.amenities) {
-      const parsed = JSON.parse(req.body.amenities)
+      const parsed = JSON.parse(req.body.amenities);
       updateData.amenities = {
         general: (parsed.general || []).map(item => ({
           name: item.name || '',
@@ -428,25 +475,25 @@ export const updateProperty = async (req, res) => {
           name: item.name || '',
           icon: typeof item.icon === 'object' ? '' : (item.icon || '')
         }))
-      }
+      };
     }
     if (req.body.roomsAndSpaces) {
-      updateData.roomsAndSpaces = JSON.parse(req.body.roomsAndSpaces)
+      updateData.roomsAndSpaces = JSON.parse(req.body.roomsAndSpaces);
     }
     if (req.body.nearbyAttractions) {
-      const parsed = JSON.parse(req.body.nearbyAttractions)
+      const parsed = JSON.parse(req.body.nearbyAttractions);
       updateData.nearbyAttractions = parsed
         .filter(attraction => attraction.name && attraction.distance)
         .map(attraction => ({
           name: attraction.name,
           distance: attraction.distance
-        }))
+        }));
     }
     if (req.body.houseRules) {
-      updateData.houseRules = JSON.parse(req.body.houseRules)
+      updateData.houseRules = JSON.parse(req.body.houseRules);
     }
     if (req.body.extraServices) {
-      updateData.extraServices = JSON.parse(req.body.extraServices)
+      updateData.extraServices = JSON.parse(req.body.extraServices);
     }
 
     if (req.files && req.files.length > 0) {
@@ -454,29 +501,29 @@ export const updateProperty = async (req, res) => {
         url: file.location,
         name: file.originalname,
         id: file.filename
-      }))
+      }));
     }
 
     const updatedProperty = await PropertyModel.findByIdAndUpdate(
       id,
       updateData,
       { new: true, lean: true }
-    )
+    );
 
     if (!updatedProperty) {
-      return res.status(404).json({ message: "Property not found" })
+      return res.status(404).json({ message: "Property not found" });
     }
 
     res.status(200).json({
       success: true,
       message: "Property updated successfully",
       property: updatedProperty
-    })
+    });
   } catch (error) {
-    console.error(error)
-    res.status(500).json({ message: "Server error" })
+    console.error(error);
+    res.status(500).json({ message: error.message || "Server error" });
   }
-}
+};
 
 export const deleteProperty = async (req, res) => {
   try {
@@ -566,10 +613,9 @@ export const blockUnblockUser = async (req, res) => {
 
 export const getBookings = async(req,res)=>{
   try {
-    const bookings = await BookingModel.find({bookingStatus:"confirmed"})
-      .populate("user", "name email phone")
-      .populate("property", "name location type")
-      .select('user property bookingStatus checkIn checkOut totalPrice createdAt')
+    const bookings = await BookingModel.find({bookingStatus:["confirmed","cancelled"]})
+      .populate("user")
+      .populate("property")
       .sort({ createdAt: -1 })
       .lean();
     
@@ -593,5 +639,149 @@ export const adminLogout = async (req, res) => {
   } catch (error) {
     console.error("Logout Error:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+
+export const markChekout = async(req,res)=>{
+  try {
+    const {bookingId} = req.params 
+    const {checkedOut} = req.body
+
+    const booking = await BookingModel.findByIdAndUpdate(
+      bookingId,
+      {checkedOut},
+      {new:true,lean:true}
+    ).select('checkedOut')
+
+  if(!booking){
+    return res.status(404).json({ message: "Booking not found" });
+  }
+  res.status(200).json({
+    success: true,
+    message: `Booking ${checkedOut ? 'true' : 'false'} successfully`,
+    booking
+  });
+} catch (error) {
+  console.error(error);
+  res.status(500).json({ message: "Internal server error" });
+}
+};
+
+
+export const getAllReviews = async (req, res) => {
+  try {
+    const reviews = await ReviewModel.find()
+      .populate('user', 'name email')
+      .populate('property', 'title location')
+      .populate('booking', 'checkInDate checkOutDate')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json(reviews);
+  } catch (error) {
+    console.error('Error fetching reviews:', error);
+    res.status(500).json({ message: 'Failed to fetch reviews', error: error.message });
+  }
+};
+
+export const getReviewById = async (req, res) => {
+  try {
+    const { reviewId } = req.params;
+    console.log(reviewId)
+    const review = await ReviewModel.findById(reviewId)
+      .populate('user', 'name email phone')
+      .populate('property', 'title location images price')
+      .populate('booking', 'checkInDate checkOutDate totalAmount');
+     console.log(review)
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+
+    res.status(200).json(review);
+  } catch (error) {
+    console.error('Error fetching review:', error);
+    res.status(500).json({ message: 'Failed to fetch review', error: error.message });
+  }
+};
+
+export const deleteReview = async (req, res) => {
+  try {
+    const { reviewId } = req.params;
+
+    const review = await ReviewModel.findById(reviewId);
+    
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+
+    const property = await PropertyModel.findById(review.property);
+    
+    if (property) {
+      const allReviews = await ReviewModel.find({ 
+        property: review.property,
+        _id: { $ne: reviewId }
+      });
+
+      if (allReviews.length > 0) {
+        const totalRating = allReviews.reduce((sum, r) => sum + r.rating, 0);
+        property.rating = totalRating / allReviews.length;
+        property.reviewCount = allReviews.length;
+      } else {
+        property.rating = 0;
+        property.reviewCount = 0;
+      }
+
+      await property.save();
+    }
+
+    await ReviewModel.findByIdAndDelete(reviewId);
+
+    res.status(200).json({ message: 'Review deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting review:', error);
+    res.status(500).json({ message: 'Failed to delete review', error: error.message });
+  }
+};
+
+
+export const cancelBooking = async (req, res) => {
+  try {
+    const bookingId = req.params.id;
+
+    const booking = await BookingModel.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    if (booking.bookingStatus === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Booking is already cancelled",
+      });
+    }
+
+    booking.bookingStatus = "cancelled";
+    await booking.save();
+
+    await PropertyModel.findByIdAndUpdate(booking.property, {
+      $inc: { availableUnits: booking.units },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Booking cancelled successfully",
+      booking,
+    });
+  } catch (error) {
+    console.error("❌ Error cancelling booking:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to cancel booking",
+      error: error.message,
+    });
   }
 };
