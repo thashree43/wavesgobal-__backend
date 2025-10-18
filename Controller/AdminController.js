@@ -234,6 +234,7 @@ export const addproperty = async (req, res) => {
       nearbyAttractions,
       houseRules,
       extraServices,
+      availability,
       status 
     } = req.body;
 
@@ -257,6 +258,28 @@ export const addproperty = async (req, res) => {
     if (!parsedPricing.night && !parsedPricing.week && !parsedPricing.month && !parsedPricing.year) {
       return res.status(400).json({ message: "At least one pricing period is required" });
     }
+
+    const cleanedPricing = {
+      night: parsedPricing.night || undefined,
+      week: parsedPricing.week || undefined,
+      month: parsedPricing.month || undefined,
+      year: parsedPricing.year || undefined,
+      weekdays: {
+        monday: parsedPricing.weekdays?.monday || undefined,
+        tuesday: parsedPricing.weekdays?.tuesday || undefined,
+        wednesday: parsedPricing.weekdays?.wednesday || undefined,
+        thursday: parsedPricing.weekdays?.thursday || undefined,
+        friday: parsedPricing.weekdays?.friday || undefined,
+        saturday: parsedPricing.weekdays?.saturday || undefined,
+        sunday: parsedPricing.weekdays?.sunday || undefined
+      },
+      customDates: (parsedPricing.customDates || []).map(custom => ({
+        startDate: custom.startDate,
+        endDate: custom.endDate,
+        price: custom.price,
+        label: custom.label || ''
+      }))
+    };
 
     const parsedFees = 
       typeof fees === "string" ? JSON.parse(fees) : fees || {
@@ -329,6 +352,19 @@ export const addproperty = async (req, res) => {
     const parsedExtraServices = 
       typeof extraServices === "string" ? JSON.parse(extraServices) : extraServices || [];
 
+    const parsedAvailability = 
+      typeof availability === "string" ? JSON.parse(availability) : availability || {
+        blockedDates: []
+      };
+
+    const cleanedAvailability = {
+      blockedDates: (parsedAvailability.blockedDates || []).map(blocked => ({
+        startDate: blocked.startDate,
+        endDate: blocked.endDate,
+        reason: blocked.reason || 'Blocked by admin'
+      }))
+    };
+
     const newProperty = new PropertyModel({
       title,
       description,
@@ -336,7 +372,7 @@ export const addproperty = async (req, res) => {
       neighborhood,
       location,
       mapLocation: parsedMapLocation,
-      pricing: parsedPricing,
+      pricing: cleanedPricing,
       fees: parsedFees,
       area,
       bedrooms,
@@ -349,6 +385,7 @@ export const addproperty = async (req, res) => {
       nearbyAttractions: cleanedNearbyAttractions,
       houseRules: parsedHouseRules,
       extraServices: parsedExtraServices,
+      availability: cleanedAvailability,
       images,
       status: status === 'true' || status === true
     });
@@ -369,7 +406,7 @@ export const addproperty = async (req, res) => {
 export const getProperty = async (req, res) => {
   try {
     const properties = await PropertyModel.find()
-      .select('title description type neighborhood location mapLocation pricing fees area bedrooms bathrooms guests beds propertyHighlights amenities roomsAndSpaces nearbyAttractions houseRules extraServices images status createdAt')
+      .select('title description type neighborhood location mapLocation pricing fees area bedrooms bathrooms guests beds propertyHighlights amenities roomsAndSpaces nearbyAttractions houseRules extraServices availability images status createdAt')
       .populate('neighborhood', 'name')
       .sort({ createdAt: -1 })
       .lean();
@@ -384,6 +421,24 @@ export const getProperty = async (req, res) => {
       if (property.pricing?.week) pricingDisplay.week = `AED ${property.pricing.week.toLocaleString()}/week`;
       if (property.pricing?.month) pricingDisplay.month = `AED ${property.pricing.month.toLocaleString()}/month`;
       if (property.pricing?.year) pricingDisplay.year = `AED ${property.pricing.year.toLocaleString()}/year`;
+
+      const weekdayPricingDisplay = {};
+      if (property.pricing?.weekdays) {
+        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        days.forEach(day => {
+          if (property.pricing.weekdays[day]) {
+            weekdayPricingDisplay[day] = `AED ${property.pricing.weekdays[day].toLocaleString()}`;
+          }
+        });
+      }
+
+      const customDatesDisplay = (property.pricing?.customDates || []).map(custom => ({
+        startDate: custom.startDate,
+        endDate: custom.endDate,
+        price: `AED ${custom.price.toLocaleString()}/night`,
+        priceValue: custom.price,
+        label: custom.label || ''
+      }));
 
       const feesDisplay = {};
       if (property.fees?.cleaningFee) feesDisplay.cleaningFee = `AED ${property.fees.cleaningFee.toLocaleString()}`;
@@ -402,6 +457,8 @@ export const getProperty = async (req, res) => {
         mapLocation: property.mapLocation,
         pricing: property.pricing,
         pricingDisplay: pricingDisplay,
+        weekdayPricingDisplay: weekdayPricingDisplay,
+        customDatesDisplay: customDatesDisplay,
         fees: property.fees,
         feesDisplay: feesDisplay,
         area: property.area ? `${property.area} sqft` : '',
@@ -415,6 +472,7 @@ export const getProperty = async (req, res) => {
         nearbyAttractions: property.nearbyAttractions,
         houseRules: property.houseRules,
         extraServices: property.extraServices,
+        availability: property.availability,
         images: property.images,
         status: property.status ? 'Available' : 'Not Available',
         addedDate: property.createdAt.toISOString().split('T')[0],
@@ -439,16 +497,39 @@ export const updateProperty = async (req, res) => {
     if (req.body.mapLocation) {
       updateData.mapLocation = JSON.parse(req.body.mapLocation);
     }
+
     if (req.body.pricing) {
       const parsedPricing = JSON.parse(req.body.pricing);
       if (!parsedPricing.night && !parsedPricing.week && !parsedPricing.month && !parsedPricing.year) {
         return res.status(400).json({ message: "At least one pricing period is required" });
       }
-      updateData.pricing = parsedPricing;
+      updateData.pricing = {
+        night: parsedPricing.night || undefined,
+        week: parsedPricing.week || undefined,
+        month: parsedPricing.month || undefined,
+        year: parsedPricing.year || undefined,
+        weekdays: {
+          monday: parsedPricing.weekdays?.monday || undefined,
+          tuesday: parsedPricing.weekdays?.tuesday || undefined,
+          wednesday: parsedPricing.weekdays?.wednesday || undefined,
+          thursday: parsedPricing.weekdays?.thursday || undefined,
+          friday: parsedPricing.weekdays?.friday || undefined,
+          saturday: parsedPricing.weekdays?.saturday || undefined,
+          sunday: parsedPricing.weekdays?.sunday || undefined
+        },
+        customDates: (parsedPricing.customDates || []).map(custom => ({
+          startDate: custom.startDate,
+          endDate: custom.endDate,
+          price: custom.price,
+          label: custom.label || ''
+        }))
+      };
     }
+
     if (req.body.fees) {
       updateData.fees = JSON.parse(req.body.fees);
     }
+
     if (req.body.propertyHighlights) {
       const parsed = JSON.parse(req.body.propertyHighlights);
       updateData.propertyHighlights = parsed.map(highlight => ({
@@ -456,6 +537,7 @@ export const updateProperty = async (req, res) => {
         icon: typeof highlight.icon === 'object' ? '' : (highlight.icon || '')
       }));
     }
+
     if (req.body.amenities) {
       const parsed = JSON.parse(req.body.amenities);
       updateData.amenities = {
@@ -477,9 +559,11 @@ export const updateProperty = async (req, res) => {
         }))
       };
     }
+
     if (req.body.roomsAndSpaces) {
       updateData.roomsAndSpaces = JSON.parse(req.body.roomsAndSpaces);
     }
+
     if (req.body.nearbyAttractions) {
       const parsed = JSON.parse(req.body.nearbyAttractions);
       updateData.nearbyAttractions = parsed
@@ -489,11 +573,24 @@ export const updateProperty = async (req, res) => {
           distance: attraction.distance
         }));
     }
+
     if (req.body.houseRules) {
       updateData.houseRules = JSON.parse(req.body.houseRules);
     }
+
     if (req.body.extraServices) {
       updateData.extraServices = JSON.parse(req.body.extraServices);
+    }
+
+    if (req.body.availability) {
+      const parsed = JSON.parse(req.body.availability);
+      updateData.availability = {
+        blockedDates: (parsed.blockedDates || []).map(blocked => ({
+          startDate: blocked.startDate,
+          endDate: blocked.endDate,
+          reason: blocked.reason || 'Blocked by admin'
+        }))
+      };
     }
 
     if (req.files && req.files.length > 0) {

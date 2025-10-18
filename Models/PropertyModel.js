@@ -31,7 +31,24 @@ const propertySchema = new mongoose.Schema({
     night: { type: Number },
     week: { type: Number },
     month: { type: Number },
-    year: { type: Number }
+    year: { type: Number },
+    weekdays: {
+      monday: { type: Number },
+      tuesday: { type: Number },
+      wednesday: { type: Number },
+      thursday: { type: Number },
+      friday: { type: Number },
+      saturday: { type: Number },
+      sunday: { type: Number }
+    },
+    customDates: [
+      {
+        startDate: { type: String, required: true },
+        endDate: { type: String, required: true },
+        price: { type: Number, required: true },
+        label: { type: String }
+      }
+    ]
   },
   fees: {
     cleaningFee: { type: Number, default: 0 },
@@ -117,6 +134,15 @@ const propertySchema = new mongoose.Schema({
       price: { type: String, required: true }
     }
   ],
+  availability: {
+    blockedDates: [
+      {
+        startDate: { type: String, required: true },
+        endDate: { type: String, required: true },
+        reason: { type: String, default: 'Blocked by admin' }
+      }
+    ]
+  },
   images: [
     {
       url: { type: String, required: true },
@@ -134,14 +160,6 @@ const propertySchema = new mongoose.Schema({
       ref: "Booking"
     }
   ],
-  availability: {
-    unavailableDates: [
-      {
-        checkIn: { type: String },
-        checkOut: { type: String }
-      }
-    ]
-  },
   ratings: {
     average: { type: Number, default: 0, min: 0, max: 5 },
     total: { type: Number, default: 0 },
