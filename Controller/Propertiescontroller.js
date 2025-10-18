@@ -90,7 +90,7 @@ export const getproperties = async (req, res) => {
 
     if (checkin && checkout) {
       console.log('Filtering by dates:', { checkin, checkout });
-
+    
       const overlappingBookings = await BookingModel.find({
         bookingStatus: "confirmed",
         $or: [
@@ -104,46 +104,46 @@ export const getproperties = async (req, res) => {
       })
         .select("property checkIn checkOut bookingStatus")
         .lean();
-
+    
       console.log('Found overlapping bookings:', overlappingBookings.length);
-      if (overlappingBookings.length > 0) {
-        console.log('Booking details:', overlappingBookings.map(b => ({
-          property: b.property,
-          checkIn: b.checkIn,
-          checkOut: b.checkOut
-        })));
-      }
-
+    
+      // Check for admin-blocked dates - UPDATED
       const allProperties = await PropertyModel.find({
-        'availability.unavailableDates': { $exists: true, $ne: [] }
+        'availability.blockedDates': { $exists: true, $ne: [] }
       })
-        .select('_id title availability.unavailableDates')
+        .select('_id title availability.blockedDates')
         .lean();
-
+    
       const propertiesWithBlockedDates = allProperties.filter(property => {
-        if (!property.availability || !property.availability.unavailableDates) return false;
+        if (!property.availability || !property.availability.blockedDates) return false;
         
-        return property.availability.unavailableDates.some(blocked => {
-          return blocked.checkIn < checkout && blocked.checkOut > checkin;
+        return property.availability.blockedDates.some(blocked => {
+          const blockedStart = new Date(blocked.startDate);
+          const blockedEnd = new Date(blocked.endDate);
+          const searchStart = new Date(checkin);
+          const searchEnd = new Date(checkout);
+          
+          // Check if search dates overlap with blocked dates
+          return blockedStart < searchEnd && blockedEnd > searchStart;
         });
       });
-
+    
       console.log('Properties with blocked dates:', propertiesWithBlockedDates.length);
       if (propertiesWithBlockedDates.length > 0) {
         console.log('Blocked properties:', propertiesWithBlockedDates.map(p => ({
           id: p._id,
           title: p.title,
-          blockedDates: p.availability.unavailableDates
+          blockedDates: p.availability.blockedDates
         })));
       }
-
+    
       const bookingPropertyIds = overlappingBookings.map((booking) => booking.property.toString());
       const blockedPropertyIds = propertiesWithBlockedDates.map(p => p._id.toString());
       
       unavailablePropertyIds = [...new Set([...bookingPropertyIds, ...blockedPropertyIds])];
       
       console.log('Total unavailable properties:', unavailablePropertyIds.length);
-
+    
       if (unavailablePropertyIds.length > 0) {
         filter._id = { $nin: unavailablePropertyIds.map(id => new mongoose.Types.ObjectId(id)) };
       }
