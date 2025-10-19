@@ -56,18 +56,18 @@ export const getproperties = async (req, res) => {
 
     console.log('Search params:', { checkin, checkout, locationId, adults, children, infants });
 
-    let filter = { status: true };
+    let baseFilter = { status: true };
 
     if (location) {
-      filter.location = { $regex: location, $options: "i" };
+      baseFilter.location = { $regex: location, $options: "i" };
     }
 
     if (locationId && mongoose.Types.ObjectId.isValid(locationId)) {
-      filter.neighborhood = new mongoose.Types.ObjectId(locationId);
+      baseFilter.neighborhood = new mongoose.Types.ObjectId(locationId);
     }
 
     if (priceMin || priceMax) {
-      filter.$or = [
+      baseFilter.$or = [
         { 'pricing.night': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } },
         { 'pricing.week': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } },
         { 'pricing.month': { $gte: Number(priceMin || 0), $lte: Number(priceMax || Infinity) } },
@@ -75,20 +75,25 @@ export const getproperties = async (req, res) => {
       ];
     }
 
-    if (propertyType) filter.type = propertyType;
-    if (bedrooms) filter.bedrooms = { $gte: Number(bedrooms) };
-    if (bathrooms) filter.bathrooms = { $gte: Number(bathrooms) };
+    if (propertyType) baseFilter.type = propertyType;
+    if (bedrooms) baseFilter.bedrooms = { $gte: Number(bedrooms) };
+    if (bathrooms) baseFilter.bathrooms = { $gte: Number(bathrooms) };
 
     const totalGuests = Number(adults || guests || 0) + Number(children || 0) + Number(infants || 0);
     if (totalGuests > 0) {
-      filter.guests = { $gte: totalGuests };
+      baseFilter.guests = { $gte: totalGuests };
     }
 
-    if (minArea) filter.area = { $gte: Number(minArea) };
+    if (minArea) baseFilter.area = { $gte: Number(minArea) };
 
+    const totalPropertiesInDatabase = await PropertyModel.countDocuments(baseFilter);
+
+    let filter = JSON.parse(JSON.stringify(baseFilter));
     let unavailablePropertyIds = [];
+    let hasDateFilter = false;
 
     if (checkin && checkout) {
+      hasDateFilter = true;
       console.log('Filtering by dates:', { checkin, checkout });
     
       const overlappingBookings = await BookingModel.find({
@@ -107,7 +112,6 @@ export const getproperties = async (req, res) => {
     
       console.log('Found overlapping bookings:', overlappingBookings.length);
     
-      // Check for admin-blocked dates - UPDATED
       const allProperties = await PropertyModel.find({
         'availability.blockedDates': { $exists: true, $ne: [] }
       })
@@ -123,19 +127,11 @@ export const getproperties = async (req, res) => {
           const searchStart = new Date(checkin);
           const searchEnd = new Date(checkout);
           
-          // Check if search dates overlap with blocked dates
           return blockedStart < searchEnd && blockedEnd > searchStart;
         });
       });
     
       console.log('Properties with blocked dates:', propertiesWithBlockedDates.length);
-      if (propertiesWithBlockedDates.length > 0) {
-        console.log('Blocked properties:', propertiesWithBlockedDates.map(p => ({
-          id: p._id,
-          title: p.title,
-          blockedDates: p.availability.blockedDates
-        })));
-      }
     
       const bookingPropertyIds = overlappingBookings.map((booking) => booking.property.toString());
       const blockedPropertyIds = propertiesWithBlockedDates.map(p => p._id.toString());
@@ -152,6 +148,7 @@ export const getproperties = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     console.log('Final filter:', JSON.stringify(filter, null, 2));
+    console.log('Total in DB:', totalPropertiesInDatabase, 'Has date filter:', hasDateFilter);
 
     const [properties, totalCount] = await Promise.all([
       PropertyModel.find(filter)
@@ -174,6 +171,8 @@ export const getproperties = async (req, res) => {
       totalCount,
       totalPages: Math.ceil(totalCount / parseInt(limit)),
       currentPage: parseInt(page),
+      totalPropertiesInDatabase,
+      hasDateFilter,
       data: properties,
     });
   } catch (error) {
