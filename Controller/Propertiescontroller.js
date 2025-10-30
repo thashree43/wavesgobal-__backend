@@ -54,7 +54,7 @@ export const getproperties = async (req, res) => {
       limit = 12,
     } = req.query;
 
-    console.log('Search params:', { checkin, checkout, locationId, adults, children, infants });
+    // console.log('Search params:', { checkin, checkout, locationId, adults, children, infants });
 
     let baseFilter = { status: true };
 
@@ -94,7 +94,7 @@ export const getproperties = async (req, res) => {
 
     if (checkin && checkout) {
       hasDateFilter = true;
-      console.log('Filtering by dates:', { checkin, checkout });
+      // console.log('Filtering by dates:', { checkin, checkout });
     
       const overlappingBookings = await BookingModel.find({
         bookingStatus: "confirmed",
@@ -110,7 +110,7 @@ export const getproperties = async (req, res) => {
         .select("property checkIn checkOut bookingStatus")
         .lean();
     
-      console.log('Found overlapping bookings:', overlappingBookings.length);
+      // console.log('Found overlapping bookings:', overlappingBookings.length);
     
       const allProperties = await PropertyModel.find({
         'availability.blockedDates': { $exists: true, $ne: [] }
@@ -131,14 +131,14 @@ export const getproperties = async (req, res) => {
         });
       });
     
-      console.log('Properties with blocked dates:', propertiesWithBlockedDates.length);
+      // console.log('Properties with blocked dates:', propertiesWithBlockedDates.length);
     
       const bookingPropertyIds = overlappingBookings.map((booking) => booking.property.toString());
       const blockedPropertyIds = propertiesWithBlockedDates.map(p => p._id.toString());
       
       unavailablePropertyIds = [...new Set([...bookingPropertyIds, ...blockedPropertyIds])];
       
-      console.log('Total unavailable properties:', unavailablePropertyIds.length);
+      // console.log('Total unavailable properties:', unavailablePropertyIds.length);
     
       if (unavailablePropertyIds.length > 0) {
         filter._id = { $nin: unavailablePropertyIds.map(id => new mongoose.Types.ObjectId(id)) };
@@ -147,8 +147,8 @@ export const getproperties = async (req, res) => {
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    console.log('Final filter:', JSON.stringify(filter, null, 2));
-    console.log('Total in DB:', totalPropertiesInDatabase, 'Has date filter:', hasDateFilter);
+    // console.log('Final filter:', JSON.stringify(filter, null, 2));
+    // console.log('Total in DB:', totalPropertiesInDatabase, 'Has date filter:', hasDateFilter);
 
     const [properties, totalCount] = await Promise.all([
       PropertyModel.find(filter)
@@ -163,7 +163,7 @@ export const getproperties = async (req, res) => {
       PropertyModel.countDocuments(filter),
     ]);
 
-    console.log('Properties found:', properties.length, 'Total count:', totalCount);
+    // console.log('Properties found:', properties.length, 'Total count:', totalCount);
 
     res.status(200).json({
       success: true,

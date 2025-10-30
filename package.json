@@ -3,6 +3,7 @@
   "dependencies": {
     "@aws-sdk/lib-storage": "^3.864.0",
     "aws-sdk": "^2.1692.0",
+    "axios": "^1.13.0",
     "bcrypt": "^6.0.0",
     "body-parser": "^2.2.0",
     "cookie-parser": "^1.4.7",
