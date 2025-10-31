@@ -180,40 +180,31 @@ export const initializeAFSPayment = async (req, res) => {
       });
     }
 
-    // Reuse valid checkout
-    if (booking.paymentCheckoutId && booking.paymentAttempts?.length > 0) {
-      const lastAttempt = booking.paymentAttempts[booking.paymentAttempts.length - 1];
-      const minutesSince = (Date.now() - new Date(lastAttempt.timestamp).getTime()) / (1000 * 60);
-      
-      if (minutesSince < 25 && lastAttempt.status === 'initiated') {
-        console.log(`♻️ Reusing checkout (${minutesSince.toFixed(1)} min old)`);
-        return res.json({
-          success: true,
-          checkoutId: booking.paymentCheckoutId,
-          amount: booking.totalPrice,
-          reused: true
-        });
-      }
-    }
+    // CRITICAL FIX: Don't reuse checkout - always create fresh
+    // AFS checkout IDs expire and can't be reused
+    console.log('🔄 Creating new AFS checkout session');
 
-    // Production or Test URL based on environment
-    const isProduction = process.env.NODE_ENV === 'production';
-    const afsUrl = isProduction 
-      ? 'https://oppwa.com/v1/checkouts'
-      : 'https://test.oppwa.com/v1/checkouts';
+    // Determine environment
+    const isTest = process.env.AFS_ENVIRONMENT !== 'production';
+    const afsUrl = isTest 
+      ? 'https://test.oppwa.com/v1/checkouts'
+      : 'https://oppwa.com/v1/checkouts';
 
-    const frontendUrl = process.env.FRONTEND_URL || 'https://wavescation.com';
-    const backendUrl = process.env.BACKEND_URL || 'https://your-backend.onrender.com';
+    // CRITICAL: URLs must match exactly - no trailing slashes
+    const frontendUrl = (process.env.FRONTEND_URL || 'https://wavescation.com').replace(/\/$/, '');
+    const backendUrl = (process.env.BACKEND_URL || 'https://your-backend.onrender.com').replace(/\/$/, '');
     
-    const shopperResultUrl = `${frontendUrl.replace(/\/$/, '')}/payment-return`;
-    const webhookUrl = `${backendUrl.replace(/\/$/, '')}/api/user/afs-webhook`;
+    const shopperResultUrl = `${frontendUrl}/payment-return`;
+    const webhookUrl = `${backendUrl}/api/user/afs-webhook`;
 
     console.log('🔧 Creating AFS checkout:', {
-      environment: isProduction ? 'PRODUCTION' : 'TEST',
+      environment: isTest ? 'TEST' : 'PRODUCTION',
+      afsUrl,
       amount: booking.totalPrice.toFixed(2),
       bookingId: booking._id.toString(),
       shopperResultUrl,
-      webhookUrl
+      webhookUrl,
+      entityId: process.env.AFS_ENTITY_ID
     });
 
     const params = new URLSearchParams();
@@ -224,14 +215,20 @@ export const initializeAFSPayment = async (req, res) => {
     params.append('merchantTransactionId', booking._id.toString());
     params.append('shopperResultUrl', shopperResultUrl);
     params.append('notificationUrl', webhookUrl);
-    params.append('customer.email', booking.guestEmail);
-    params.append('customer.givenName', booking.guestName);
+    
+    // Customer details
+    params.append('customer.email', booking.guestEmail || 'guest@wavescation.com');
+    params.append('customer.givenName', booking.guestName || 'Guest');
     if (booking.guestPhone) params.append('customer.phone', booking.guestPhone);
-    params.append('billing.street1', booking.property.address || 'Dubai');
+    
+    // Billing details
+    params.append('billing.street1', booking.property?.address || 'Dubai');
     params.append('billing.city', 'Dubai');
     params.append('billing.state', 'Dubai');
     params.append('billing.country', 'AE');
     params.append('billing.postcode', '00000');
+    
+    // Custom parameters
     params.append('customParameters[SHOPPER_bookingId]', booking._id.toString());
 
     const response = await axios.post(afsUrl, params.toString(), {
@@ -239,46 +236,61 @@ export const initializeAFSPayment = async (req, res) => {
         'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      timeout: 15000
+      timeout: 20000
     });
 
-    console.log('📥 AFS Response:', response.data.result);
+    console.log('📥 AFS Response:', {
+      code: response.data.result?.code,
+      description: response.data.result?.description,
+      checkoutId: response.data.id
+    });
 
+    // Success pattern for checkout creation
     if (response.data.result.code.match(/^000\.200/)) {
       booking.paymentCheckoutId = response.data.id;
-      if (!booking.paymentAttempts) booking.paymentAttempts = [];
+      booking.paymentAttempts = booking.paymentAttempts || [];
       booking.paymentAttempts.push({
         checkoutId: response.data.id,
         timestamp: new Date(),
-        status: 'initiated'
+        status: 'initiated',
+        environment: isTest ? 'test' : 'production'
       });
       await booking.save();
+
+      console.log('✅ Checkout created successfully:', response.data.id);
 
       res.json({
         success: true,
         checkoutId: response.data.id,
-        amount: booking.totalPrice
+        amount: booking.totalPrice,
+        environment: isTest ? 'test' : 'production'
       });
     } else {
       console.error('❌ AFS Error:', response.data.result);
       res.status(400).json({
         success: false,
         message: 'Payment initialization failed',
-        error: response.data.result.description
+        error: response.data.result.description,
+        code: response.data.result.code
       });
     }
   } catch (error) {
-    console.error('💥 Payment init error:', error.response?.data || error.message);
+    console.error('💥 Payment init error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+    
     res.status(500).json({ 
       success: false,
       message: error.code === 'ECONNABORTED' 
         ? 'Payment gateway timeout' 
-        : 'Payment initialization failed'
+        : 'Payment initialization failed',
+      details: error.response?.data?.result?.description || error.message
     });
   }
 };
 
-// CRITICAL: This gets the payment status from AFS after redirect
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
@@ -305,24 +317,29 @@ export const verifyAFSPayment = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Query AFS to get payment status
-    const isProduction = process.env.NODE_ENV === 'production';
-    const afsUrl = isProduction 
-      ? `https://oppwa.com${resourcePath}`
-      : `https://test.oppwa.com${resourcePath}`;
+    // Determine environment from last payment attempt
+    const lastAttempt = booking.paymentAttempts?.[booking.paymentAttempts.length - 1];
+    const isTest = lastAttempt?.environment === 'test' || process.env.AFS_ENVIRONMENT !== 'production';
+    
+    const afsUrl = isTest 
+      ? `https://test.oppwa.com${resourcePath}`
+      : `https://oppwa.com${resourcePath}`;
 
-    console.log('🔍 Querying AFS:', afsUrl);
+    console.log('🔍 Querying AFS:', { afsUrl, environment: isTest ? 'test' : 'production' });
 
     const response = await axios.get(afsUrl, {
       params: { entityId: process.env.AFS_ENTITY_ID },
-      headers: { 'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}` }
+      headers: { 'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}` },
+      timeout: 15000
     });
 
-    console.log('📥 AFS Payment Status:', response.data.result);
+    console.log('📥 AFS Payment Status:', {
+      code: response.data.result.code,
+      description: response.data.result.description
+    });
 
     const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
     const pendingPattern = /^(000\.200)/;
-    const rejectedPattern = /^(000\.400\.|800\.|900\.|100\.)/;
 
     if (successPattern.test(response.data.result.code)) {
       console.log('✅ Payment SUCCESS');
@@ -344,7 +361,6 @@ export const verifyAFSPayment = async (req, res) => {
       booking.expiresAt = undefined;
       await booking.save();
 
-      // Block dates
       await PropertyModel.findByIdAndUpdate(booking.property._id, {
         $push: { 
           "availability.unavailableDates": { 
@@ -354,7 +370,6 @@ export const verifyAFSPayment = async (req, res) => {
         }
       });
 
-      // Send email
       const confirmationEmail = generateConfirmationEmail(booking);
       sendEmail(
         booking.guestEmail, 
@@ -405,7 +420,6 @@ export const handleAFSWebhook = async (req, res) => {
     console.log('🔔 Body:', JSON.stringify(req.body, null, 2));
     console.log('🔔 ═══════════════════════════════════════');
 
-    // ALWAYS respond 200 immediately
     res.status(200).send('OK');
 
     const { id, merchantTransactionId, result, amount, currency, paymentBrand, card } = req.body;
