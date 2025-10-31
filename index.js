@@ -45,7 +45,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/admin', Adminrouter);
-app.use('/api/User', Userrouter);
+app.use('/api/user', Userrouter);
 
 app.listen(PORT, () => {
     console.log(`Server is running at http://localhost:${PORT}`);

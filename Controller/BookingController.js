@@ -182,18 +182,18 @@ export const initializeAFSPayment = async (req, res) => {
 
     console.log('🔄 Creating new AFS checkout session');
 
-    // Determine environment
-    const isTest = process.env.AFS_ENVIRONMENT !== 'production';
+    // FIXED: Use correct environment detection
+    const isTest = process.env.AFS_TEST_MODE === 'true';
     const afsUrl = isTest 
       ? 'https://test.oppwa.com/v1/checkouts'
       : 'https://oppwa.com/v1/checkouts';
 
-    // CRITICAL FIX: Remove duplicate /api/ in webhook URL
-    const frontendUrl = (process.env.FRONTEND_URL || 'https://wavescation.com').replace(/\/$/, '');
-    const backendUrl = (process.env.BACKEND_URL || 'https://wavesgobal-backend.onrender.com').replace(/\/$/, '');
+    // FIXED: Clean URLs properly
+    const frontendUrl = (process.env.FRONTEND_URL || 'https://www.wavescation.com').replace(/\/$/, '');
+    const backendUrl = (process.env.BACKEND_URL || 'https://wavesgobal-backend-1.onrender.com').replace(/\/api\/$/, '').replace(/\/$/, '');
     
     const shopperResultUrl = `${frontendUrl}/payment-return`;
-    // FIXED: Removed duplicate /api/
+    // CRITICAL FIX: Correct webhook URL structure
     const webhookUrl = `${backendUrl}/api/user/afs-webhook`;
 
     console.log('🔧 Creating AFS checkout:', {
@@ -227,7 +227,7 @@ export const initializeAFSPayment = async (req, res) => {
     params.append('billing.country', 'AE');
     params.append('billing.postcode', '00000');
     
-    // Custom parameters
+    // Custom parameters to track booking
     params.append('customParameters[SHOPPER_bookingId]', booking._id.toString());
 
     const response = await axios.post(afsUrl, params.toString(), {
@@ -289,6 +289,7 @@ export const initializeAFSPayment = async (req, res) => {
   }
 };
 
+// CRITICAL FIX: Correct payment verification
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
@@ -315,15 +316,16 @@ export const verifyAFSPayment = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // CRITICAL FIX: Use the correct resource path from AFS
-    // AFS returns resourcePath like: /v1/checkouts/{checkoutId}/payment
-    // But we need to query: /v1/payments/{paymentId} OR the resourcePath directly
+    // CRITICAL FIX: Use resourcePath directly from AFS
+    // AFS returns: /v1/checkouts/{checkoutId}/payment
+    // We query exactly that endpoint
     
     const lastAttempt = booking.paymentAttempts?.[booking.paymentAttempts.length - 1];
-    const isTest = lastAttempt?.environment === 'test' || process.env.AFS_ENVIRONMENT !== 'production';
+    const isTest = process.env.AFS_TEST_MODE === 'true';
     
-    // CRITICAL: Use the resourcePath provided by AFS, not construct our own
     const baseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
+    
+    // FIXED: Use resourcePath as-is, don't modify it
     const afsUrl = `${baseUrl}${resourcePath}`;
 
     console.log('🔍 Querying AFS:', { 
@@ -345,7 +347,7 @@ export const verifyAFSPayment = async (req, res) => {
       id: response.data.id
     });
 
-    // AFS Success codes: https://docs.aciworldwide.com/reference/resultCodes
+    // AFS Success codes
     const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
     const pendingPattern = /^(000\.200)/;
     const reviewPattern = /^(000\.400\.0[^3]|000\.400\.100)/;
@@ -432,6 +434,7 @@ export const verifyAFSPayment = async (req, res) => {
     });
   }
 };
+
 
 export const handleAFSWebhook = async (req, res) => {
   try {
@@ -564,7 +567,6 @@ export const bookingbyuser = async (req, res) => {
   }
 };
 
-// Email templates
 function generateConfirmationEmail(booking) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -644,3 +646,11 @@ function generateConfirmationEmailTemplate(booking, property, paymentMethod) {
     </div>
   `;
 }
+
+
+
+
+
+
+
+
