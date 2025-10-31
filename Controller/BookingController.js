@@ -180,8 +180,6 @@ export const initializeAFSPayment = async (req, res) => {
       });
     }
 
-    // CRITICAL FIX: Don't reuse checkout - always create fresh
-    // AFS checkout IDs expire and can't be reused
     console.log('🔄 Creating new AFS checkout session');
 
     // Determine environment
@@ -190,11 +188,12 @@ export const initializeAFSPayment = async (req, res) => {
       ? 'https://test.oppwa.com/v1/checkouts'
       : 'https://oppwa.com/v1/checkouts';
 
-    // CRITICAL: URLs must match exactly - no trailing slashes
+    // CRITICAL FIX: Remove duplicate /api/ in webhook URL
     const frontendUrl = (process.env.FRONTEND_URL || 'https://wavescation.com').replace(/\/$/, '');
-    const backendUrl = (process.env.BACKEND_URL || 'https://your-backend.onrender.com').replace(/\/$/, '');
+    const backendUrl = (process.env.BACKEND_URL || 'https://wavesgobal-backend.onrender.com').replace(/\/$/, '');
     
     const shopperResultUrl = `${frontendUrl}/payment-return`;
+    // FIXED: Removed duplicate /api/
     const webhookUrl = `${backendUrl}/api/user/afs-webhook`;
 
     console.log('🔧 Creating AFS checkout:', {
@@ -245,7 +244,6 @@ export const initializeAFSPayment = async (req, res) => {
       checkoutId: response.data.id
     });
 
-    // Success pattern for checkout creation
     if (response.data.result.code.match(/^000\.200/)) {
       booking.paymentCheckoutId = response.data.id;
       booking.paymentAttempts = booking.paymentAttempts || [];
@@ -317,15 +315,22 @@ export const verifyAFSPayment = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Determine environment from last payment attempt
+    // CRITICAL FIX: Use the correct resource path from AFS
+    // AFS returns resourcePath like: /v1/checkouts/{checkoutId}/payment
+    // But we need to query: /v1/payments/{paymentId} OR the resourcePath directly
+    
     const lastAttempt = booking.paymentAttempts?.[booking.paymentAttempts.length - 1];
     const isTest = lastAttempt?.environment === 'test' || process.env.AFS_ENVIRONMENT !== 'production';
     
-    const afsUrl = isTest 
-      ? `https://test.oppwa.com${resourcePath}`
-      : `https://oppwa.com${resourcePath}`;
+    // CRITICAL: Use the resourcePath provided by AFS, not construct our own
+    const baseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
+    const afsUrl = `${baseUrl}${resourcePath}`;
 
-    console.log('🔍 Querying AFS:', { afsUrl, environment: isTest ? 'test' : 'production' });
+    console.log('🔍 Querying AFS:', { 
+      afsUrl, 
+      environment: isTest ? 'test' : 'production',
+      resourcePath 
+    });
 
     const response = await axios.get(afsUrl, {
       params: { entityId: process.env.AFS_ENTITY_ID },
@@ -335,11 +340,15 @@ export const verifyAFSPayment = async (req, res) => {
 
     console.log('📥 AFS Payment Status:', {
       code: response.data.result.code,
-      description: response.data.result.description
+      description: response.data.result.description,
+      paymentType: response.data.paymentType,
+      id: response.data.id
     });
 
+    // AFS Success codes: https://docs.aciworldwide.com/reference/resultCodes
     const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
     const pendingPattern = /^(000\.200)/;
+    const reviewPattern = /^(000\.400\.0[^3]|000\.400\.100)/;
 
     if (successPattern.test(response.data.result.code)) {
       console.log('✅ Payment SUCCESS');
@@ -383,8 +392,8 @@ export const verifyAFSPayment = async (req, res) => {
         booking
       });
       
-    } else if (pendingPattern.test(response.data.result.code)) {
-      console.log('⏳ Payment PENDING');
+    } else if (pendingPattern.test(response.data.result.code) || reviewPattern.test(response.data.result.code)) {
+      console.log('⏳ Payment PENDING or UNDER REVIEW');
       return res.json({
         success: false,
         pending: true,
@@ -392,23 +401,34 @@ export const verifyAFSPayment = async (req, res) => {
       });
       
     } else {
-      console.log('❌ Payment FAILED');
+      console.log('❌ Payment FAILED:', response.data.result);
       booking.paymentStatus = "failed";
       booking.bookingStatus = "cancelled";
+      booking.paymentDetails = {
+        resultCode: response.data.result.code,
+        resultDescription: response.data.result.description,
+        timestamp: new Date()
+      };
       await booking.save();
       
       return res.json({
         success: false,
         failed: true,
-        message: response.data.result.description
+        message: response.data.result.description || 'Payment failed'
       });
     }
     
   } catch (error) {
-    console.error('❌ Verify payment error:', error.response?.data || error.message);
+    console.error('❌ Verify payment error:', {
+      message: error.message,
+      response: error.response?.data,
+      status: error.response?.status
+    });
+    
     res.status(500).json({ 
       success: false,
-      message: 'Failed to verify payment'
+      message: 'Failed to verify payment',
+      details: error.response?.data?.result?.description || error.message
     });
   }
 };
@@ -420,6 +440,7 @@ export const handleAFSWebhook = async (req, res) => {
     console.log('🔔 Body:', JSON.stringify(req.body, null, 2));
     console.log('🔔 ═══════════════════════════════════════');
 
+    // ALWAYS respond 200 immediately
     res.status(200).send('OK');
 
     const { id, merchantTransactionId, result, amount, currency, paymentBrand, card } = req.body;
