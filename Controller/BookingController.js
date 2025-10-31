@@ -188,12 +188,11 @@ export const initializeAFSPayment = async (req, res) => {
       ? 'https://test.oppwa.com/v1/checkouts'
       : 'https://oppwa.com/v1/checkouts';
 
-    // CRITICAL FIX: Remove duplicate /api/ in webhook URL
-    const frontendUrl = (process.env.FRONTEND_URL || 'https://wavescation.com').replace(/\/$/, '');
+    // CRITICAL FIX: Webhook URL - removed duplicate /api/
+    const frontendUrl = (process.env.FRONTEND_URL || 'https://www.wavescation.com').replace(/\/$/, '');
     const backendUrl = (process.env.BACKEND_URL || 'https://wavesgobal-backend.onrender.com').replace(/\/$/, '');
     
     const shopperResultUrl = `${frontendUrl}/payment-return`;
-    // FIXED: Removed duplicate /api/
     const webhookUrl = `${backendUrl}/api/user/afs-webhook`;
 
     console.log('🔧 Creating AFS checkout:', {
@@ -295,10 +294,10 @@ export const verifyAFSPayment = async (req, res) => {
     
     console.log('🔍 Verify payment called:', { resourcePath, id, bookingId });
 
-    if (!resourcePath && !id) {
+    if (!id || !bookingId) {
       return res.status(400).json({ 
         success: false, 
-        message: 'No payment information provided' 
+        message: 'Missing payment information' 
       });
     }
 
@@ -315,26 +314,33 @@ export const verifyAFSPayment = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // CRITICAL FIX: Use the correct resource path from AFS
-    // AFS returns resourcePath like: /v1/checkouts/{checkoutId}/payment
-    // But we need to query: /v1/payments/{paymentId} OR the resourcePath directly
-    
+    // CRITICAL FIX: Query the payment status endpoint, not the checkout endpoint
+    // Use the checkout ID to get payment status
     const lastAttempt = booking.paymentAttempts?.[booking.paymentAttempts.length - 1];
     const isTest = lastAttempt?.environment === 'test' || process.env.AFS_ENVIRONMENT !== 'production';
     
-    // CRITICAL: Use the resourcePath provided by AFS, not construct our own
     const baseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
-    const afsUrl = `${baseUrl}${resourcePath}`;
+    
+    // CRITICAL: Query payment status using the checkout ID from AFS redirect
+    // Format: GET /v1/checkouts/{id}/payment?entityId=xxx
+    const checkoutId = id; // This is the checkout ID from URL params
+    const afsUrl = `${baseUrl}/v1/checkouts/${checkoutId}/payment`;
 
-    console.log('🔍 Querying AFS:', { 
+    console.log('🔍 Querying AFS payment status:', { 
       afsUrl, 
-      environment: isTest ? 'test' : 'production',
-      resourcePath 
+      checkoutId,
+      environment: isTest ? 'test' : 'production'
     });
 
+    // CRITICAL FIX: Don't send additional parameters that were already set in checkout
+    // Only send entityId as query parameter
     const response = await axios.get(afsUrl, {
-      params: { entityId: process.env.AFS_ENTITY_ID },
-      headers: { 'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}` },
+      params: { 
+        entityId: process.env.AFS_ENTITY_ID
+      },
+      headers: { 
+        'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`
+      },
       timeout: 15000
     });
 
@@ -342,13 +348,13 @@ export const verifyAFSPayment = async (req, res) => {
       code: response.data.result.code,
       description: response.data.result.description,
       paymentType: response.data.paymentType,
-      id: response.data.id
+      id: response.data.id,
+      hasCard: !!response.data.card
     });
 
     // AFS Success codes: https://docs.aciworldwide.com/reference/resultCodes
     const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
-    const pendingPattern = /^(000\.200)/;
-    const reviewPattern = /^(000\.400\.0[^3]|000\.400\.100)/;
+    const pendingPattern = /^(000\.200|000\.400\.0[^3])/;
 
     if (successPattern.test(response.data.result.code)) {
       console.log('✅ Payment SUCCESS');
@@ -392,12 +398,13 @@ export const verifyAFSPayment = async (req, res) => {
         booking
       });
       
-    } else if (pendingPattern.test(response.data.result.code) || reviewPattern.test(response.data.result.code)) {
-      console.log('⏳ Payment PENDING or UNDER REVIEW');
+    } else if (pendingPattern.test(response.data.result.code)) {
+      console.log('⏳ Payment PENDING');
       return res.json({
         success: false,
         pending: true,
-        message: 'Payment is being processed'
+        message: 'Payment is being processed',
+        code: response.data.result.code
       });
       
     } else {
@@ -414,7 +421,8 @@ export const verifyAFSPayment = async (req, res) => {
       return res.json({
         success: false,
         failed: true,
-        message: response.data.result.description || 'Payment failed'
+        message: response.data.result.description || 'Payment failed',
+        code: response.data.result.code
       });
     }
     
