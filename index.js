@@ -9,7 +9,6 @@ import databaseConnection from './utils/db.js';
 import cookieParser from 'cookie-parser';
 import nodeCron from 'node-cron';
 import './jobs/BookingClean.js';
-import { handleAFSWebhook } from './Controller/BookingController.js';
 
 dotenv.config();
 databaseConnection();
@@ -18,69 +17,177 @@ const app = express();
 const PORT = 3000;
 
 // ============================================
-// CRITICAL: WEBHOOK ROUTE BEFORE OTHER MIDDLEWARE
+// RAW BODY PARSER FOR WEBHOOK - MUST BE FIRST
 // ============================================
-// This MUST come before CORS and body parser middleware
-// AFS webhook sends application/x-www-form-urlencoded data
-app.post('/api/user/afs-webhook', 
-  express.urlencoded({ extended: true }),
-  express.json(),
-  (req, res, next) => {
-    console.log('🔔 ═══════════════════════════════════════');
-    console.log('🔔 WEBHOOK HIT AT:', new Date().toISOString());
-    console.log('🔔 IP:', req.ip);
-    console.log('🔔 Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('🔔 Body:', JSON.stringify(req.body, null, 2));
-    console.log('🔔 ═══════════════════════════════════════');
-    next();
-  },
-  handleAFSWebhook
-);
+app.use('/api/user/afs-webhook', express.raw({ type: '*/*' }));
 
 // ============================================
-// HEALTH CHECK ENDPOINT (for uptime monitoring)
+// WEBHOOK ROUTE - BEFORE ANY OTHER MIDDLEWARE
+// ============================================
+app.post('/api/user/afs-webhook', async (req, res) => {
+  try {
+    console.log('🔔 ═══════════════════════════════════════');
+    console.log('🔔 WEBHOOK RECEIVED:', new Date().toISOString());
+    console.log('🔔 IP:', req.ip);
+    console.log('🔔 Method:', req.method);
+    console.log('🔔 Content-Type:', req.headers['content-type']);
+    console.log('🔔 Headers:', JSON.stringify(req.headers, null, 2));
+    
+    // Parse body based on content type
+    let body = {};
+    
+    if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
+      // Parse form data manually
+      const bodyString = req.body.toString('utf-8');
+      console.log('🔔 Raw Body (form):', bodyString);
+      
+      const params = new URLSearchParams(bodyString);
+      for (const [key, value] of params) {
+        body[key] = value;
+      }
+    } else if (req.headers['content-type']?.includes('application/json')) {
+      body = JSON.parse(req.body.toString('utf-8'));
+      console.log('🔔 Raw Body (json):', JSON.stringify(body, null, 2));
+    } else {
+      console.log('🔔 Raw Body:', req.body.toString('utf-8'));
+      body = JSON.parse(req.body.toString('utf-8'));
+    }
+    
+    console.log('🔔 Parsed Body:', JSON.stringify(body, null, 2));
+    console.log('🔔 ═══════════════════════════════════════');
+
+    // ALWAYS respond 200 immediately
+    res.status(200).send('OK');
+
+    // Import models
+    const BookingModel = (await import('./Models/BookingModel.js')).default;
+    const PropertyModel = (await import('./Models/PropertyModel.js')).default;
+    const sendEmail = (await import('./utils/SendEmail.js')).default;
+
+    const { id, merchantTransactionId, result, amount, currency, paymentBrand, card } = body;
+
+    if (!merchantTransactionId) {
+      console.error('❌ No merchantTransactionId in webhook');
+      return;
+    }
+
+    const booking = await BookingModel.findById(merchantTransactionId).populate('property');
+    if (!booking) {
+      console.error('❌ Booking not found:', merchantTransactionId);
+      return;
+    }
+
+    console.log('✅ Booking found:', booking._id);
+    console.log('📊 Current status:', {
+      paymentStatus: booking.paymentStatus,
+      bookingStatus: booking.bookingStatus
+    });
+
+    // Don't process if already confirmed
+    if (booking.paymentStatus === 'confirmed') {
+      console.log('ℹ️ Booking already confirmed, skipping');
+      return;
+    }
+
+    const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
+    const rejectedPattern = /^(000\.400\.|800\.|900\.|100\.)/;
+
+    const resultCode = result?.code || body['result.code'];
+    const resultDescription = result?.description || body['result.description'];
+
+    if (successPattern.test(resultCode)) {
+      console.log('✅✅✅ WEBHOOK: Payment SUCCESS ✅✅✅');
+      
+      booking.paymentTransactionId = id;
+      booking.paymentDetails = {
+        paymentBrand: paymentBrand || body.paymentBrand,
+        amount: parseFloat(amount),
+        currency,
+        resultCode,
+        resultDescription,
+        cardBin: card?.bin || body['card.bin'],
+        cardLast4: card?.last4Digits || body['card.last4Digits'],
+        timestamp: new Date(),
+        webhookReceived: true
+      };
+      booking.paymentStatus = "confirmed";
+      booking.bookingStatus = "confirmed";
+      booking.paymentMethod = "online-payment";
+      booking.expiresAt = undefined;
+      await booking.save();
+
+      console.log('💾 Booking updated successfully');
+
+      await PropertyModel.findByIdAndUpdate(booking.property._id, {
+        $push: {
+          "availability.unavailableDates": {
+            checkIn: booking.checkIn,
+            checkOut: booking.checkOut
+          }
+        }
+      });
+
+      console.log('🏠 Property availability updated');
+
+      // Send email (simplified)
+      const emailHtml = `
+        <h1>Payment Successful!</h1>
+        <p>Hi ${booking.guestName},</p>
+        <p>Your booking ${booking._id} has been confirmed.</p>
+        <p>Amount: AED ${booking.totalPrice}</p>
+      `;
+      
+      sendEmail(booking.guestEmail, "Payment Successful - Wavescation", emailHtml)
+        .catch(err => console.error("Email error:", err));
+
+      console.log('📧 Confirmation email sent');
+
+    } else if (rejectedPattern.test(resultCode)) {
+      console.log('❌ WEBHOOK: Payment FAILED');
+
+      booking.paymentStatus = "failed";
+      booking.bookingStatus = "cancelled";
+      booking.paymentDetails = {
+        resultCode,
+        resultDescription,
+        timestamp: new Date(),
+        webhookReceived: true
+      };
+      await booking.save();
+    }
+
+    console.log('🔔 ═══════════════════════════════════════');
+  } catch (error) {
+    console.error('💥 Webhook error:', error);
+  }
+});
+
+// ============================================
+// HEALTH CHECK ENDPOINT
 // ============================================
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'ok', 
+  res.status(200).json({
+    status: 'ok',
     timestamp: Date.now(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development'
   });
 });
 
-// Simple health check for root
 app.get('/', (req, res) => {
-  res.status(200).json({ 
+  res.status(200).json({
     message: 'Wavescation API is running',
     timestamp: new Date().toISOString()
   });
 });
 
 // ============================================
-// CORS CONFIGURATION
+// CORS - ALLOW ALL FOR WEBHOOKS
 // ============================================
-const allowedOrigins = [
-    'https://www.wavescation.com',
-    'http://localhost:5173',
-    'https://test.oppwa.com',  // AFS test environment
-    'https://oppwa.com'         // AFS production environment
-];
-
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl, webhooks)
-        if (!origin) {
-            return callback(null, true);
-        }
-        
-        if (allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            // Log but don't block - important for debugging
-            console.log('⚠️ CORS: Origin not in whitelist:', origin);
-            callback(null, true); // Allow anyway for webhooks
-        }
+        // Allow all origins (webhooks have no origin)
+        callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
@@ -94,7 +201,6 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Remove problematic headers
 app.use((req, res, next) => {
   res.removeHeader("Cross-Origin-Opener-Policy");
   res.removeHeader("Cross-Origin-Embedder-Policy");
@@ -102,7 +208,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Request logging (useful for debugging)
+// Request logging
 app.use((req, res, next) => {
   console.log(`📡 ${req.method} ${req.path} - ${new Date().toISOString()}`);
   next();
@@ -117,17 +223,15 @@ app.use('/api/user', Userrouter);
 // ============================================
 // ERROR HANDLING
 // ============================================
-// 404 handler
 app.use((req, res) => {
   console.log('❌ 404 Not Found:', req.method, req.path);
-  res.status(404).json({ 
+  res.status(404).json({
     success: false,
     message: 'Route not found',
     path: req.path
   });
 });
 
-// Global error handler
 app.use((err, req, res, next) => {
   console.error('💥 Server Error:', err);
   res.status(err.status || 500).json({
@@ -149,7 +253,6 @@ app.listen(PORT, () => {
     console.log('🚀 ═══════════════════════════════════════');
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('👋 SIGTERM received, shutting down gracefully...');
   process.exit(0);
