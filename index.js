@@ -17,24 +17,17 @@ const app = express();
 const PORT = 3000;
 
 // ============================================
-// RAW BODY PARSER FOR WEBHOOK - MUST BE FIRST
+// CRITICAL: WEBHOOK MUST BE FIRST - BEFORE ANY BODY PARSING
 // ============================================
-app.use('/api/user/afs-webhook', express.raw({ type: '*/*' }));
-
-// ============================================
-// WEBHOOK ROUTE - BEFORE ANY OTHER MIDDLEWARE
-// ============================================
-// ============================================
-// WEBHOOK ROUTE - BEFORE ANY OTHER MIDDLEWARE
-// ============================================
-app.post('/api/user/afs-webhook', async (req, res) => {
+app.post('/api/user/afs-webhook', express.raw({ type: '*/*' }), async (req, res) => {
     try {
       console.log('🔔 ═══════════════════════════════════════');
       console.log('🔔 WEBHOOK RECEIVED:', new Date().toISOString());
       console.log('🔔 IP:', req.ip);
       console.log('🔔 Content-Type:', req.headers['content-type']);
+      console.log('🔔 Headers:', JSON.stringify(req.headers, null, 2));
       
-      // ALWAYS respond 200 FIRST
+      // ALWAYS respond 200 FIRST to acknowledge receipt
       res.status(200).send('OK');
       
       // Parse body
@@ -223,33 +216,31 @@ app.post('/api/user/afs-webhook', async (req, res) => {
       console.error('💥 Webhook error:', error.message);
       console.error(error.stack);
     }
-  });
-
-// ============================================
-// HEALTH CHECK ENDPOINT
-// ============================================
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    timestamp: Date.now(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
-  });
 });
 
-app.get('/', (req, res) => {
+// Test endpoint to verify webhook is reachable
+app.all('/api/user/afs-webhook-test', (req, res) => {
+  console.log('🧪 ═══════════════════════════════════');
+  console.log('🧪 TEST WEBHOOK HIT');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('IP:', req.ip);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('🧪 ═══════════════════════════════════');
+  
   res.status(200).json({
-    message: 'Wavescation API is running',
+    success: true,
+    message: 'Webhook endpoint is reachable!',
     timestamp: new Date().toISOString()
   });
 });
 
 // ============================================
-// CORS - ALLOW ALL FOR WEBHOOKS
+// CORS - Must allow webhook requests
 // ============================================
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow all origins (webhooks have no origin)
+        // Allow all origins (webhooks may not have an origin header)
         callback(null, true);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -258,7 +249,7 @@ app.use(cors({
 }));
 
 // ============================================
-// GENERAL MIDDLEWARE
+// GENERAL MIDDLEWARE - AFTER WEBHOOK
 // ============================================
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -271,21 +262,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// Request logging
+// Logging middleware
 app.use((req, res, next) => {
-  console.log(`📡 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+  // Don't log webhook hits twice
+  if (!req.path.includes('/afs-webhook')) {
+    console.log(`📡 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+  }
   next();
 });
 
+// Health check
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: Date.now(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    webhookUrl: `${process.env.BACKEND_URL}/api/user/afs-webhook`
+  });
+});
+
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'Wavescation API is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // ============================================
-// API ROUTES
+// ROUTES
 // ============================================
 app.use('/api/admin', Adminrouter);
 app.use('/api/user', Userrouter);
 
-// ============================================
-// ERROR HANDLING
-// ============================================
+// 404 handler
 app.use((req, res) => {
   console.log('❌ 404 Not Found:', req.method, req.path);
   res.status(404).json({
@@ -295,6 +305,7 @@ app.use((req, res) => {
   });
 });
 
+// Error handler
 app.use((err, req, res, next) => {
   console.error('💥 Server Error:', err);
   res.status(err.status || 500).json({
@@ -313,6 +324,7 @@ app.listen(PORT, () => {
     console.log(`🚀 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🚀 AFS Mode: ${process.env.AFS_TEST_MODE === 'true' ? 'TEST' : 'PRODUCTION'}`);
     console.log(`🚀 Webhook URL: ${process.env.BACKEND_URL}/api/user/afs-webhook`);
+    console.log(`🚀 Test Webhook: ${process.env.BACKEND_URL}/api/user/afs-webhook-test`);
     console.log('🚀 ═══════════════════════════════════════');
 });
 

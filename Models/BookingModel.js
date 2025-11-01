@@ -30,7 +30,7 @@ const bookingSchema = new mongoose.Schema({
   advancePaymentPaid: { type: Boolean, default: false },
   paymentStatus: {
     type: String,
-    enum: ["pending", "pending-verification", "confirmed", "failed", "refunded"],
+    enum: ["pending", "pending-verification", "pendingWebhook", "confirmed", "failed", "refunded"],
     default: "pending",
   },
   bookingStatus: {
