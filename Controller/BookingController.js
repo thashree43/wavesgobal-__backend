@@ -269,7 +269,7 @@ export const initializeAFSPayment = async (req, res) => {
 };
 
 // ============================================
-// VERIFY AFS PAYMENT (NO WEBHOOK - USES STATUS API)
+// VERIFY AFS PAYMENT (USES STATUS API - NO WEBHOOK)
 // ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
@@ -331,22 +331,40 @@ export const verifyAFSPayment = async (req, res) => {
     
     try {
       const isTest = process.env.AFS_TEST_MODE === 'true';
-      const afsUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
-      const statusUrl = `${afsUrl}${resourcePath}?entityId=${process.env.AFS_ENTITY_ID}`;
+      const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
       
-      console.log('📤 AFS Status URL:', statusUrl);
+      // ✅ CRITICAL FIX: Use exact resourcePath from AFS
+      // resourcePath already contains the full path like: /v1/checkouts/XXX/payment
+      const fullUrl = `${afsBaseUrl}${resourcePath}?entityId=${process.env.AFS_ENTITY_ID}`;
+      
+      console.log('📤 Querying AFS Status API:', fullUrl);
 
-      const statusResponse = await axios.get(statusUrl, {
+      const statusResponse = await axios.get(fullUrl, {
         headers: {
           'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`
         },
-        timeout: 10000
+        timeout: 15000
       });
 
-      console.log('📥 AFS Status Response:', statusResponse.data.result);
+      console.log('📥 Full AFS Response:', JSON.stringify(statusResponse.data, null, 2));
 
-      const resultCode = statusResponse.data.result.code;
+      const result = statusResponse.data.result;
+      const resultCode = result?.code;
+
+      if (!resultCode) {
+        console.error('❌ No result code in response');
+        return res.json({
+          success: false,
+          pending: true,
+          message: 'Processing payment...'
+        });
+      }
+
+      console.log('📊 Result Code:', resultCode, '-', result?.description);
+
+      // ✅ Success patterns from AFS documentation
       const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
+      const pendingPattern = /^(000\.200)/;
       const failedPattern = /^(000\.400|800\.|900\.|100\.)/;
 
       // ✅ PAYMENT SUCCESS
@@ -359,7 +377,7 @@ export const verifyAFSPayment = async (req, res) => {
           amount: parseFloat(statusResponse.data.amount || 0),
           currency: statusResponse.data.currency,
           resultCode: resultCode,
-          resultDescription: statusResponse.data.result.description,
+          resultDescription: result.description,
           cardBin: statusResponse.data.card?.bin,
           cardLast4: statusResponse.data.card?.last4Digits,
           timestamp: new Date(),
@@ -423,6 +441,16 @@ export const verifyAFSPayment = async (req, res) => {
         });
       }
 
+      // ⏳ STILL PENDING (e.g., 3D Secure authentication)
+      if (pendingPattern.test(resultCode)) {
+        console.log('⏳ Payment still pending (likely 3D Secure)');
+        return res.json({
+          success: false,
+          pending: true,
+          message: 'Payment is being authenticated...'
+        });
+      }
+
       // ❌ PAYMENT FAILED
       if (failedPattern.test(resultCode)) {
         console.log('❌ PAYMENT FAILED');
@@ -431,7 +459,7 @@ export const verifyAFSPayment = async (req, res) => {
         booking.bookingStatus = "cancelled";
         booking.paymentDetails = {
           resultCode: resultCode,
-          resultDescription: statusResponse.data.result.description,
+          resultDescription: result.description,
           timestamp: new Date(),
           retrievedViaAPI: true
         };
@@ -442,12 +470,12 @@ export const verifyAFSPayment = async (req, res) => {
         return res.json({
           success: false,
           failed: true,
-          message: statusResponse.data.result.description || 'Payment failed'
+          message: result.description || 'Payment failed'
         });
       }
 
-      // ⏳ STILL PENDING
-      console.log('⏳ Payment still pending');
+      // ⚠️ UNKNOWN STATUS
+      console.log('⚠️ Unknown result code, treating as pending:', resultCode);
       return res.json({
         success: false,
         pending: true,
@@ -457,7 +485,7 @@ export const verifyAFSPayment = async (req, res) => {
     } catch (apiError) {
       console.error('❌ AFS Status API Error:', apiError.message);
       if (apiError.response) {
-        console.error('❌ AFS Error Response:', apiError.response.data);
+        console.error('❌ AFS Error Response:', JSON.stringify(apiError.response.data, null, 2));
       }
       
       // Fall back to pending
