@@ -269,9 +269,6 @@ export const initializeAFSPayment = async (req, res) => {
 };
 
 
-// ============================================
-// VERIFY AFS PAYMENT - CORRECT STATUS CHECK
-// ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
@@ -326,7 +323,7 @@ export const verifyAFSPayment = async (req, res) => {
     }
 
     // ============================================
-    // 🔥 CRITICAL FIX: Use GET on resourcePath WITHOUT query params
+    // 🔥 CORRECT: Add entityId as query param
     // ============================================
     console.log('🔍 Checking AFS Payment Status...');
     
@@ -334,9 +331,9 @@ export const verifyAFSPayment = async (req, res) => {
       const isTest = process.env.AFS_TEST_MODE === 'true';
       const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
       
-      // ✅ CORRECT: Just use the resourcePath AS-IS from AFS redirect
-      // Don't add entityId or any other params - just use what AFS gave you
-      const statusUrl = `${afsBaseUrl}${resourcePath}`;
+      // ✅ Use resourcePath + add entityId as query parameter
+      // resourcePath already has the full path, just add the required entityId
+      const statusUrl = `${afsBaseUrl}${resourcePath}${resourcePath.includes('?') ? '&' : '?'}entityId=${process.env.AFS_ENTITY_ID}`;
       
       console.log('📤 Querying AFS Status:', statusUrl);
 
@@ -511,9 +508,8 @@ export const verifyAFSPayment = async (req, res) => {
     res.status(500).json({ success: false, message: 'Verification failed' });
   }
 };
-// ============================================
-// CHECK PAYMENT STATUS (FOR POLLING)
-// ============================================
+
+
 export const checkPaymentStatus = async (req, res) => {
   try {
     const { bookingId } = req.params;
