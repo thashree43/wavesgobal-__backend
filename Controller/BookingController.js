@@ -306,11 +306,7 @@ export const initializeAFSPayment = async (req, res) => {
 
 // ============================================
 // VERIFY AFS PAYMENT - ONLY rely on webhook
-// ============================================
 
-// ============================================
-// VERIFY AFS PAYMENT - FIXED VERSION
-// ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
@@ -348,18 +344,21 @@ export const verifyAFSPayment = async (req, res) => {
       });
     }
 
-    // If we have checkoutId, query AFS payment status - FIXED ENDPOINT
+    // If we have checkoutId, query AFS payment status - CORRECT ENDPOINT
     if (booking.paymentCheckoutId) {
       try {
         const isTest = process.env.AFS_TEST_MODE === 'true';
         const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
         
-        // ✅ FIX: Use CHECKOUTS endpoint, not PAYMENTS endpoint
-        const statusUrl = `${afsBaseUrl}/v1/checkouts/${booking.paymentCheckoutId}/payment?entityId=${process.env.AFS_ENTITY_ID}`;
-
+        // ✅ CORRECT: Use checkouts endpoint with entityId as query parameter
+        const statusUrl = `${afsBaseUrl}/v1/checkouts/${booking.paymentCheckoutId}/payment`;
+        
         console.log('🔍 Querying payment status:', statusUrl);
 
         const statusResponse = await axios.get(statusUrl, {
+          params: {
+            entityId: process.env.AFS_ENTITY_ID
+          },
           headers: {
             'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`
           },
