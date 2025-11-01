@@ -305,19 +305,16 @@ export const initializeAFSPayment = async (req, res) => {
 };
 
 // ============================================
-// VERIFY AFS PAYMENT - ONLY rely on webhook
-
+// VERIFY AFS PAYMENT - INSTANT CHECK
+// ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
     
-    console.log('🔍 Verify payment called:', { resourcePath, id, bookingId });
+    console.log('🔍 Verify payment:', { resourcePath, id, bookingId });
 
     if (!bookingId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Booking ID required' 
-      });
+      return res.status(400).json({ success: false, message: 'Booking ID required' });
     }
 
     const token = req.headers.authorization?.split(' ')[1];
@@ -326,16 +323,14 @@ export const verifyAFSPayment = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const booking = await BookingModel.findById(bookingId).populate('property');
 
-    if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
     if (booking.user.toString() !== decoded.id) {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    // Check if already confirmed
+    // Already confirmed by webhook
     if (booking.paymentStatus === 'confirmed') {
-      console.log('✅ Payment already confirmed');
+      console.log('✅ Already confirmed by webhook');
       return res.json({
         success: true,
         confirmed: true,
@@ -344,52 +339,36 @@ export const verifyAFSPayment = async (req, res) => {
       });
     }
 
-    // If we have checkoutId, query AFS payment status - CORRECT ENDPOINT
-    if (booking.paymentCheckoutId) {
+    // User submitted payment - verify immediately
+    if (resourcePath) {
       try {
         const isTest = process.env.AFS_TEST_MODE === 'true';
         const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
+        const statusUrl = `${afsBaseUrl}${resourcePath}`;
         
-        // ✅ CORRECT: Use checkouts endpoint with entityId as query parameter
-        const statusUrl = `${afsBaseUrl}/v1/checkouts/${booking.paymentCheckoutId}/payment`;
-        
-        console.log('🔍 Querying payment status:', statusUrl);
+        console.log('🔍 Checking payment:', statusUrl);
 
-        const statusResponse = await axios.get(statusUrl, {
-          params: {
-            entityId: process.env.AFS_ENTITY_ID
-          },
-          headers: {
-            'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`
-          },
-          timeout: 10000
+        const response = await axios.get(statusUrl, {
+          params: { entityId: process.env.AFS_ENTITY_ID },
+          headers: { 'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}` },
+          timeout: 8000
         });
 
-        console.log('📥 Payment Status Response:', {
-          code: statusResponse.data.result?.code,
-          description: statusResponse.data.result?.description,
-          paymentType: statusResponse.data.paymentType
-        });
+        const code = response.data.result?.code;
+        console.log('📥 Result:', code, response.data.result?.description);
 
-        const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
-        const pendingPattern = /^(000\.200|800\.400\.5|100\.400\.500)/;
-        const rejectedPattern = /^(000\.400|800\.[17]00|800\.800|100\.[13]00|200\.[13]00)/;
-
-        if (successPattern.test(statusResponse.data.result.code)) {
-          // Payment successful
-          console.log('✅ Payment SUCCESS via API query');
-          
-          booking.paymentTransactionId = statusResponse.data.id;
+        // Success codes
+        if (/^(000\.000\.|000\.100\.1|000\.[36])/.test(code)) {
+          booking.paymentTransactionId = response.data.id;
           booking.paymentDetails = {
-            paymentBrand: statusResponse.data.paymentBrand,
-            amount: parseFloat(statusResponse.data.amount),
-            currency: statusResponse.data.currency,
-            resultCode: statusResponse.data.result.code,
-            resultDescription: statusResponse.data.result.description,
-            cardBin: statusResponse.data.card?.bin,
-            cardLast4: statusResponse.data.card?.last4Digits,
-            timestamp: new Date(),
-            verifiedViaAPI: true
+            paymentBrand: response.data.paymentBrand,
+            amount: parseFloat(response.data.amount),
+            currency: response.data.currency,
+            resultCode: code,
+            resultDescription: response.data.result.description,
+            cardBin: response.data.card?.bin,
+            cardLast4: response.data.card?.last4Digits,
+            timestamp: new Date()
           };
           booking.paymentStatus = "confirmed";
           booking.bookingStatus = "confirmed";
@@ -397,120 +376,70 @@ export const verifyAFSPayment = async (req, res) => {
           booking.expiresAt = undefined;
           await booking.save();
 
-          console.log('💾 Booking confirmed via API');
-
           await PropertyModel.findByIdAndUpdate(booking.property._id, {
-            $push: {
-              "availability.unavailableDates": {
-                checkIn: booking.checkIn,
-                checkOut: booking.checkOut
-              }
-            }
+            $push: { "availability.unavailableDates": { checkIn: booking.checkIn, checkOut: booking.checkOut } }
           });
 
-          // Send confirmation email
-          const emailHtml = generateConfirmationEmail(booking);
-          
-          sendEmail(booking.guestEmail, "Payment Successful - Wavescation", emailHtml)
+          sendEmail(booking.guestEmail, "Payment Successful - Wavescation", generateConfirmationEmail(booking))
             .catch(err => console.error("Email error:", err));
 
-          return res.json({
-            success: true,
-            confirmed: true,
-            booking,
-            message: 'Payment confirmed'
-          });
-
-        } else if (pendingPattern.test(statusResponse.data.result.code)) {
-          console.log('⏳ Payment still PENDING:', statusResponse.data.result.description);
-          return res.json({
-            success: false,
-            pending: true,
-            message: 'Payment is being processed...'
-          });
-
-        } else if (rejectedPattern.test(statusResponse.data.result.code)) {
-          console.log('❌ Payment FAILED:', statusResponse.data.result.description);
-          
-          booking.paymentStatus = "failed";
-          booking.bookingStatus = "cancelled";
-          booking.paymentDetails = {
-            resultCode: statusResponse.data.result.code,
-            resultDescription: statusResponse.data.result.description,
-            timestamp: new Date(),
-            verifiedViaAPI: true
-          };
-          await booking.save();
-
-          return res.json({
-            success: false,
-            failed: true,
-            message: statusResponse.data.result.description || 'Payment failed'
-          });
-        } else {
-          // Unknown status
-          console.log('⚠️ Unknown payment status:', statusResponse.data.result.code);
-          return res.json({
-            success: false,
-            pending: true,
-            message: 'Payment status unknown, still processing...'
-          });
+          return res.json({ success: true, confirmed: true, booking });
         }
 
-      } catch (apiError) {
-        console.error('❌ AFS API query failed:', {
-          message: apiError.message,
-          response: apiError.response?.data,
-          status: apiError.response?.status
+        // Pending codes
+        if (/^(000\.200|800\.400\.5|100\.400)/.test(code)) {
+          return res.json({ success: false, pending: true, message: 'Processing...' });
+        }
+
+        // Failed codes
+        booking.paymentStatus = "failed";
+        booking.bookingStatus = "cancelled";
+        booking.paymentDetails = {
+          resultCode: code,
+          resultDescription: response.data.result.description,
+          timestamp: new Date()
+        };
+        await booking.save();
+
+        return res.json({ 
+          success: false, 
+          failed: true, 
+          message: response.data.result.description || 'Payment failed' 
         });
-        
-        // If API query fails, fall back to pending
-        return res.json({
-          success: false,
-          pending: true,
-          message: 'Verifying payment...'
-        });
+
+      } catch (err) {
+        console.error('❌ API error:', err.message);
+        return res.json({ success: false, pending: true, message: 'Checking status...' });
       }
     }
 
-    // No checkout ID yet - still pending
-    console.log('⏳ No checkout ID, still pending');
-    return res.json({
-      success: false,
-      pending: true,
-      message: 'Payment is being processed...'
-    });
+    // No resourcePath - user hasn't paid yet
+    return res.json({ success: false, pending: true, message: 'Waiting for payment...' });
     
   } catch (error) {
-    console.error('❌ Verify payment error:', error);
-    
-    res.status(500).json({ 
-      success: false,
-      message: 'Failed to verify payment',
-      details: error.message
-    });
+    console.error('❌ Error:', error);
+    res.status(500).json({ success: false, message: 'Verification failed' });
   }
 };
 
 // ============================================
-// WEBHOOK HANDLER - PRIMARY PAYMENT PROCESSOR
+// WEBHOOK - PRIMARY CONFIRMATION (INSTANT)
 // ============================================
 export const handleAFSWebhook = async (req, res) => {
   try {
-    console.log('🔔 ═══════════════════════════════════════');
-    console.log('🔔 WEBHOOK RECEIVED:', new Date().toISOString());
-    console.log('🔔 Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('🔔 Body:', JSON.stringify(req.body, null, 2));
-    console.log('🔔 Query:', JSON.stringify(req.query, null, 2));
-    console.log('🔔 ═══════════════════════════════════════');
-
-    // ALWAYS respond 200 immediately
+    console.log('🔔 WEBHOOK:', new Date().toISOString());
+    
+    // ALWAYS respond immediately
     res.status(200).send('OK');
 
-    const { id, merchantTransactionId, result, amount, currency, paymentBrand, card } = req.body;
+    const body = req.body;
+    console.log('📦 Webhook data:', JSON.stringify(body, null, 2));
+
+    const merchantTransactionId = body.merchantTransactionId;
+    const resultCode = body.result?.code || body['result.code'];
 
     if (!merchantTransactionId) {
-      console.error('❌ No merchantTransactionId in webhook');
+      console.error('❌ No booking ID in webhook');
       return;
     }
 
@@ -520,34 +449,27 @@ export const handleAFSWebhook = async (req, res) => {
       return;
     }
 
-    console.log('✅ Booking found:', booking._id);
-    console.log('📊 Current status:', {
-      paymentStatus: booking.paymentStatus,
-      bookingStatus: booking.bookingStatus
-    });
-
-    // Don't process if already confirmed
     if (booking.paymentStatus === 'confirmed') {
-      console.log('ℹ️ Booking already confirmed, skipping');
+      console.log('ℹ️ Already confirmed');
       return;
     }
 
-    const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
-    const rejectedPattern = /^(000\.400\.|800\.|900\.|100\.)/;
+    console.log('📊 Processing payment for:', booking._id);
 
-    if (successPattern.test(result.code)) {
-      console.log('✅✅✅ WEBHOOK: Payment SUCCESS ✅✅✅');
+    // Success
+    if (/^(000\.000\.|000\.100\.1|000\.[36])/.test(resultCode)) {
+      console.log('✅ PAYMENT SUCCESS');
       
-      booking.paymentTransactionId = id;
+      booking.paymentTransactionId = body.id;
       booking.paymentDetails = {
-        paymentBrand, 
-        amount: parseFloat(amount), 
-        currency,
-        resultCode: result.code, 
-        resultDescription: result.description,
-        cardBin: card?.bin, 
-        cardLast4: card?.last4Digits,
-        timestamp: new Date(), 
+        paymentBrand: body.paymentBrand,
+        amount: parseFloat(body.amount),
+        currency: body.currency,
+        resultCode,
+        resultDescription: body.result?.description || body['result.description'],
+        cardBin: body.card?.bin || body['card.bin'],
+        cardLast4: body.card?.last4Digits || body['card.last4Digits'],
+        timestamp: new Date(),
         webhookReceived: true
       };
       booking.paymentStatus = "confirmed";
@@ -556,53 +478,31 @@ export const handleAFSWebhook = async (req, res) => {
       booking.expiresAt = undefined;
       await booking.save();
 
-      console.log('💾 Booking updated successfully');
-
       await PropertyModel.findByIdAndUpdate(booking.property._id, {
-        $push: { 
-          "availability.unavailableDates": { 
-            checkIn: booking.checkIn, 
-            checkOut: booking.checkOut 
-          } 
-        }
+        $push: { "availability.unavailableDates": { checkIn: booking.checkIn, checkOut: booking.checkOut } }
       });
 
-      console.log('🏠 Property availability updated');
-
-      const email = generateConfirmationEmail(booking);
-      sendEmail(booking.guestEmail, "Payment Successful - Wavescation", email)
+      sendEmail(booking.guestEmail, "Payment Successful", generateConfirmationEmail(booking))
         .catch(err => console.error("Email error:", err));
-      
-      console.log('📧 Confirmation email sent');
-      
-    } else if (rejectedPattern.test(result.code)) {
-      console.log('❌ WEBHOOK: Payment FAILED');
+
+      console.log('✅ Booking confirmed via webhook');
+    } 
+    // Failed
+    else if (/^(000\.400|800\.|900\.|100\.)/.test(resultCode)) {
+      console.log('❌ PAYMENT FAILED');
       
       booking.paymentStatus = "failed";
       booking.bookingStatus = "cancelled";
-      booking.paymentDetails = {
-        resultCode: result.code,
-        resultDescription: result.description,
-        timestamp: new Date(),
-        webhookReceived: true
-      };
       await booking.save();
-      
-      const email = generatePaymentFailureEmail(booking, result.description);
-      sendEmail(booking.guestEmail, "Payment Failed - Wavescation", email)
-        .catch(err => console.error("Email error:", err));
-    } else {
-      console.log('⚠️ WEBHOOK: Unknown result code:', result.code);
     }
 
-    console.log('🔔 ═══════════════════════════════════════');
   } catch (error) {
     console.error('💥 Webhook error:', error);
   }
 };
 
 // ============================================
-// CHECK PAYMENT STATUS - FOR POLLING
+// POLL STATUS - 20 SECOND SAFETY NET ONLY
 // ============================================
 export const checkPaymentStatus = async (req, res) => {
   try {
@@ -618,23 +518,15 @@ export const checkPaymentStatus = async (req, res) => {
       return res.status(403).json({ message: "Not authorized" });
     }
 
-    console.log('📊 Payment status check:', {
-      bookingId,
-      paymentStatus: booking.paymentStatus,
-      bookingStatus: booking.bookingStatus
-    });
-
     res.json({
       bookingId: booking._id,
       paymentStatus: booking.paymentStatus,
       bookingStatus: booking.bookingStatus,
       confirmed: booking.paymentStatus === "confirmed",
       failed: booking.paymentStatus === "failed",
-      pending: booking.paymentStatus === "pending",
-      details: booking.paymentDetails
+      pending: booking.paymentStatus === "pending"
     });
   } catch (error) {
-    console.error('Status check error:', error);
     res.status(500).json({ message: 'Failed to check status' });
   }
 };
