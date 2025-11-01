@@ -10,9 +10,7 @@ dotenv.config();
 
 const router = express.Router();
 
-// ============================================
-// AUTH ROUTES
-// ============================================
+
 router.post("/login", Userlogin);
 router.post("/register", UserRegister);
 router.post("/verify-otp", VerifyOtp);

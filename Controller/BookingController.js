@@ -77,9 +77,7 @@ export const updateBookingDetails = async (req, res) => {
   }
 };
 
-// ============================================
-// CONFIRM BOOKING (Pay at Property)
-// ============================================
+
 export const confirmBooking = async (req, res) => {
   try {
     const { bookingId, paymentMethod } = req.body;
@@ -123,9 +121,7 @@ export const confirmBooking = async (req, res) => {
   }
 };
 
-// ============================================
-// CANCEL BOOKING
-// ============================================
+
 export const cancelBooking = async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -148,9 +144,7 @@ export const cancelBooking = async (req, res) => {
   }
 };
 
-// ============================================
-// GET CHECKOUT DATA
-// ============================================
+
 export const getCheckout = async (req, res) => {
   try {
     const { propertyId, bookingId } = req.query;
@@ -174,9 +168,7 @@ export const getCheckout = async (req, res) => {
   }
 };
 
-// ============================================
-// INITIALIZE AFS PAYMENT
-// ============================================
+
 export const initializeAFSPayment = async (req, res) => {
   try {
     const { bookingId } = req.body;
@@ -204,37 +196,46 @@ export const initializeAFSPayment = async (req, res) => {
     const backendUrl = (process.env.BACKEND_URL || 'https://wavesgobal-backend.onrender.com').replace(/\/$/, '');
     
     const shopperResultUrl = `${frontendUrl}/payment-return`;
+    
+    // ✅ CRITICAL: This MUST match the URL registered in AFS merchant portal
     const webhookUrl = `${backendUrl}/api/user/afs-webhook`;
+
+    console.log('🔗 Webhook URL:', webhookUrl);
+    console.log('🔗 Return URL:', shopperResultUrl);
 
     const params = new URLSearchParams();
     params.append('entityId', process.env.AFS_ENTITY_ID);
     params.append('amount', booking.totalPrice.toFixed(2));
     params.append('currency', 'AED');
-    params.append('paymentType', 'DB'); // Debit (immediate charge)
+    params.append('paymentType', 'DB');
     params.append('merchantTransactionId', booking._id.toString());
     
-    // ✅ CRITICAL: Proper webhook configuration
+    // ✅ CRITICAL: Server-to-Server notification URL
     params.append('notificationUrl', webhookUrl);
     
-    // ✅ Customer details
+    // Customer details
     params.append('customer.email', booking.guestEmail || 'guest@wavescation.com');
     params.append('customer.givenName', booking.guestName || 'Guest');
     if (booking.guestPhone) params.append('customer.phone', booking.guestPhone);
     
-    // ✅ Billing details (required by AFS)
+    // Billing details
     params.append('billing.street1', booking.property?.address || 'Dubai');
     params.append('billing.city', 'Dubai');
     params.append('billing.country', 'AE');
     params.append('billing.postcode', '00000');
     
-    // ✅ Redirect URL
+    // Browser redirect URL
     params.append('shopperResultUrl', shopperResultUrl);
+    
+    // ✅ Add custom parameters for tracking
+    params.append('customParameters[SHOPPER_bookingId]', booking._id.toString());
     
     console.log('📤 AFS Request:', {
       url: afsUrl,
       amount: booking.totalPrice.toFixed(2),
       bookingId: booking._id.toString(),
-      webhookUrl
+      webhookUrl,
+      entityId: process.env.AFS_ENTITY_ID
     });
 
     const response = await axios.post(afsUrl, params.toString(), {
@@ -259,6 +260,7 @@ export const initializeAFSPayment = async (req, res) => {
         amount: booking.totalPrice
       });
     } else {
+      console.error('❌ AFS Error:', response.data);
       res.status(400).json({
         success: false,
         message: 'Payment initialization failed',
@@ -267,6 +269,9 @@ export const initializeAFSPayment = async (req, res) => {
     }
   } catch (error) {
     console.error('💥 Payment init error:', error.message);
+    if (error.response) {
+      console.error('💥 AFS Response:', error.response.data);
+    }
     res.status(500).json({ 
       success: false,
       message: 'Payment initialization failed',
@@ -277,7 +282,6 @@ export const initializeAFSPayment = async (req, res) => {
 
 
 
-// ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
@@ -459,9 +463,7 @@ export const handleAFSWebhook = async (req, res) => {
   }
 };
 
-// ============================================
-// POLL STATUS - 20 SECOND SAFETY NET ONLY
-// ============================================
+
 export const checkPaymentStatus = async (req, res) => {
   try {
     const { bookingId } = req.params;
@@ -491,9 +493,7 @@ export const checkPaymentStatus = async (req, res) => {
   }
 };
 
-// ============================================
-// TEST WEBHOOK
-// ============================================
+
 export const testWebhook = async (req, res) => {
   console.log('🧪 ═══════════════════════════════════');
   console.log('🧪 TEST WEBHOOK RECEIVED');
@@ -516,9 +516,6 @@ export const testWebhook = async (req, res) => {
   });
 };
 
-// ============================================
-// GET USER BOOKINGS
-// ============================================
 export const bookingbyuser = async (req, res) => {
   try {
     const { id } = req.query;
@@ -543,9 +540,7 @@ export const bookingbyuser = async (req, res) => {
   }
 };
 
-// ============================================
-// EMAIL TEMPLATES
-// ============================================
+
 function generateConfirmationEmail(booking) {
   return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
