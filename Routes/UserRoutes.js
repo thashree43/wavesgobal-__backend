@@ -3,7 +3,7 @@ import path from "path";
 import dotenv from "dotenv";
 import {Userlogin,UserRegister,userlogout, getUser, updateuser, updatePass, forgotPassword, validateResetToken, resetPassword, VerifyOtp, ResendOtp} from "../Controller/AuthController.js"
 import {getLocation, getproperties, getproperty} from "../Controller/Propertiescontroller.js"
-import { bookingbyuser, createBooking, updateBookingDetails, confirmBooking, getCheckout, cancelBooking, initializeAFSPayment, verifyAFSPayment, checkPaymentStatus, testWebhook} from "../Controller/BookingController.js";
+import { bookingbyuser, createBooking, updateBookingDetails, confirmBooking, getCheckout, cancelBooking, initializeAFSPayment, verifyAFSPayment, checkPaymentStatus} from "../Controller/BookingController.js";
 import { googleAuth } from "../Controller/GoogleAuthController.js";
 import { submitReview,  getPropertyReviews,  markReviewHelpful, getUserReviews,  updateReview,  deleteReview } from "../Controller/ReviewController.js";
 dotenv.config();
@@ -52,8 +52,8 @@ router.get("/payment-status/:bookingId", checkPaymentStatus); // For polling
 // router.post("/afs-webhook", handleAFSWebhook); 
 
 // Test endpoints (for debugging)
-router.post('/test-webhook', testWebhook);
-router.get('/test-webhook', testWebhook);
+// router.post('/test-webhook', testWebhook);
+// router.get('/test-webhook', testWebhook);
 
 // ============================================
 // GOOGLE AUTH
