@@ -24,143 +24,206 @@ app.use('/api/user/afs-webhook', express.raw({ type: '*/*' }));
 // ============================================
 // WEBHOOK ROUTE - BEFORE ANY OTHER MIDDLEWARE
 // ============================================
+// ============================================
+// WEBHOOK ROUTE - BEFORE ANY OTHER MIDDLEWARE
+// ============================================
 app.post('/api/user/afs-webhook', async (req, res) => {
-  try {
-    console.log('🔔 ═══════════════════════════════════════');
-    console.log('🔔 WEBHOOK RECEIVED:', new Date().toISOString());
-    console.log('🔔 IP:', req.ip);
-    console.log('🔔 Method:', req.method);
-    console.log('🔔 Content-Type:', req.headers['content-type']);
-    console.log('🔔 Headers:', JSON.stringify(req.headers, null, 2));
-    
-    // Parse body based on content type
-    let body = {};
-    
-    if (req.headers['content-type']?.includes('application/x-www-form-urlencoded')) {
-      // Parse form data manually
-      const bodyString = req.body.toString('utf-8');
-      console.log('🔔 Raw Body (form):', bodyString);
+    try {
+      console.log('🔔 ═══════════════════════════════════════');
+      console.log('🔔 WEBHOOK RECEIVED:', new Date().toISOString());
+      console.log('🔔 IP:', req.ip);
+      console.log('🔔 Content-Type:', req.headers['content-type']);
       
+      // ALWAYS respond 200 FIRST
+      res.status(200).send('OK');
+      
+      // Parse body
+      let body = {};
+      const bodyString = req.body.toString('utf-8');
+      console.log('🔔 Raw Body:', bodyString);
+      
+      // Parse form-urlencoded data
       const params = new URLSearchParams(bodyString);
       for (const [key, value] of params) {
-        body[key] = value;
-      }
-    } else if (req.headers['content-type']?.includes('application/json')) {
-      body = JSON.parse(req.body.toString('utf-8'));
-      console.log('🔔 Raw Body (json):', JSON.stringify(body, null, 2));
-    } else {
-      console.log('🔔 Raw Body:', req.body.toString('utf-8'));
-      body = JSON.parse(req.body.toString('utf-8'));
-    }
-    
-    console.log('🔔 Parsed Body:', JSON.stringify(body, null, 2));
-    console.log('🔔 ═══════════════════════════════════════');
-
-    // ALWAYS respond 200 immediately
-    res.status(200).send('OK');
-
-    // Import models
-    const BookingModel = (await import('./Models/BookingModel.js')).default;
-    const PropertyModel = (await import('./Models/PropertyModel.js')).default;
-    const sendEmail = (await import('./utils/SendEmail.js')).default;
-
-    const { id, merchantTransactionId, result, amount, currency, paymentBrand, card } = body;
-
-    if (!merchantTransactionId) {
-      console.error('❌ No merchantTransactionId in webhook');
-      return;
-    }
-
-    const booking = await BookingModel.findById(merchantTransactionId).populate('property');
-    if (!booking) {
-      console.error('❌ Booking not found:', merchantTransactionId);
-      return;
-    }
-
-    console.log('✅ Booking found:', booking._id);
-    console.log('📊 Current status:', {
-      paymentStatus: booking.paymentStatus,
-      bookingStatus: booking.bookingStatus
-    });
-
-    // Don't process if already confirmed
-    if (booking.paymentStatus === 'confirmed') {
-      console.log('ℹ️ Booking already confirmed, skipping');
-      return;
-    }
-
-    const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
-    const rejectedPattern = /^(000\.400\.|800\.|900\.|100\.)/;
-
-    const resultCode = result?.code || body['result.code'];
-    const resultDescription = result?.description || body['result.description'];
-
-    if (successPattern.test(resultCode)) {
-      console.log('✅✅✅ WEBHOOK: Payment SUCCESS ✅✅✅');
-      
-      booking.paymentTransactionId = id;
-      booking.paymentDetails = {
-        paymentBrand: paymentBrand || body.paymentBrand,
-        amount: parseFloat(amount),
-        currency,
-        resultCode,
-        resultDescription,
-        cardBin: card?.bin || body['card.bin'],
-        cardLast4: card?.last4Digits || body['card.last4Digits'],
-        timestamp: new Date(),
-        webhookReceived: true
-      };
-      booking.paymentStatus = "confirmed";
-      booking.bookingStatus = "confirmed";
-      booking.paymentMethod = "online-payment";
-      booking.expiresAt = undefined;
-      await booking.save();
-
-      console.log('💾 Booking updated successfully');
-
-      await PropertyModel.findByIdAndUpdate(booking.property._id, {
-        $push: {
-          "availability.unavailableDates": {
-            checkIn: booking.checkIn,
-            checkOut: booking.checkOut
-          }
+        // Handle nested keys like result.code, card.bin, etc.
+        if (key.includes('.')) {
+          const [parent, child] = key.split('.');
+          if (!body[parent]) body[parent] = {};
+          body[parent][child] = value;
+        } else {
+          body[key] = value;
         }
-      });
-
-      console.log('🏠 Property availability updated');
-
-      // Send email (simplified)
-      const emailHtml = `
-        <h1>Payment Successful!</h1>
-        <p>Hi ${booking.guestName},</p>
-        <p>Your booking ${booking._id} has been confirmed.</p>
-        <p>Amount: AED ${booking.totalPrice}</p>
-      `;
+      }
       
-      sendEmail(booking.guestEmail, "Payment Successful - Wavescation", emailHtml)
-        .catch(err => console.error("Email error:", err));
-
-      console.log('📧 Confirmation email sent');
-
-    } else if (rejectedPattern.test(resultCode)) {
-      console.log('❌ WEBHOOK: Payment FAILED');
-
-      booking.paymentStatus = "failed";
-      booking.bookingStatus = "cancelled";
-      booking.paymentDetails = {
-        resultCode,
-        resultDescription,
-        timestamp: new Date(),
-        webhookReceived: true
-      };
-      await booking.save();
+      console.log('🔔 Parsed Body:', JSON.stringify(body, null, 2));
+      
+      // Import models
+      const BookingModel = (await import('./Models/BookingModel.js')).default;
+      const PropertyModel = (await import('./Models/PropertyModel.js')).default;
+      const sendEmail = (await import('./utils/SendEmail.js')).default;
+  
+      const merchantTransactionId = body.merchantTransactionId;
+      const resultCode = body.result?.code;
+  
+      if (!merchantTransactionId) {
+        console.error('❌ No merchantTransactionId');
+        return;
+      }
+  
+      // ✅ Validate ObjectId format before querying
+      if (!/^[0-9a-fA-F]{24}$/.test(merchantTransactionId)) {
+        console.error('❌ Invalid booking ID format:', merchantTransactionId);
+        return;
+      }
+  
+      console.log('🔍 Looking for booking:', merchantTransactionId);
+  
+      const booking = await BookingModel.findById(merchantTransactionId).populate('property');
+      if (!booking) {
+        console.error('❌ Booking not found:', merchantTransactionId);
+        return;
+      }
+  
+      console.log('✅ Booking found:', booking._id);
+      console.log('📊 Current status:', {
+        paymentStatus: booking.paymentStatus,
+        bookingStatus: booking.bookingStatus
+      });
+  
+      // Skip if already confirmed
+      if (booking.paymentStatus === 'confirmed') {
+        console.log('ℹ️ Already confirmed, skipping');
+        return;
+      }
+  
+      if (!resultCode) {
+        console.error('❌ No result code in webhook');
+        return;
+      }
+  
+      const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
+      const failedPattern = /^(000\.400|800\.|900\.|100\.)/;
+  
+      if (successPattern.test(resultCode)) {
+        console.log('✅✅✅ PAYMENT SUCCESS ✅✅✅');
+        
+        booking.paymentTransactionId = body.id;
+        booking.paymentDetails = {
+          paymentBrand: body.paymentBrand,
+          amount: parseFloat(body.amount || 0),
+          currency: body.currency,
+          resultCode: resultCode,
+          resultDescription: body.result?.description,
+          cardBin: body.card?.bin,
+          cardLast4: body.card?.last4Digits,
+          timestamp: new Date(),
+          webhookReceived: true
+        };
+        booking.paymentStatus = "confirmed";
+        booking.bookingStatus = "confirmed";
+        booking.paymentMethod = "online-payment";
+        booking.expiresAt = undefined;
+        await booking.save();
+  
+        console.log('💾 Booking confirmed');
+  
+        // Update property availability
+        await PropertyModel.findByIdAndUpdate(booking.property._id, {
+          $push: {
+            "availability.unavailableDates": {
+              checkIn: booking.checkIn,
+              checkOut: booking.checkOut
+            }
+          }
+        });
+  
+        console.log('🏠 Property updated');
+  
+        // Send email
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #10b981; padding: 20px; text-align: center; color: white;">
+              <h1>✓ Payment Successful!</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+              <p style="font-size: 16px;">Hi ${booking.guestName},</p>
+              <p>Your payment of <strong>AED ${booking.totalPrice}</strong> has been confirmed.</p>
+              <div style="background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
+                <h3 style="margin-top: 0; color: #10b981;">Booking Confirmed</h3>
+                <p><strong>Booking ID:</strong> ${booking._id}</p>
+                <p><strong>Property:</strong> ${booking.property.name}</p>
+                <p><strong>Check-in:</strong> ${new Date(booking.checkIn).toLocaleDateString()}</p>
+                <p><strong>Check-out:</strong> ${new Date(booking.checkOut).toLocaleDateString()}</p>
+                <p><strong>Guests:</strong> ${booking.guests}</p>
+                <p><strong>Transaction ID:</strong> ${body.id || 'N/A'}</p>
+              </div>
+              <div style="background: #dcfce7; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #86efac;">
+                <p style="margin: 0; color: #166534; font-size: 18px; font-weight: bold;">✓ Payment Confirmed</p>
+              </div>
+              <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
+                <p style="color: #6b7280; font-size: 12px;">
+                  Need help? Contact us at info@wavescation.com
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        sendEmail(booking.guestEmail, "Payment Successful - Wavescation", emailHtml)
+          .catch(err => console.error("📧 Email error:", err));
+  
+        console.log('📧 Email queued');
+  
+      } else if (failedPattern.test(resultCode)) {
+        console.log('❌ PAYMENT FAILED:', resultCode);
+        
+        booking.paymentStatus = "failed";
+        booking.bookingStatus = "cancelled";
+        booking.paymentDetails = {
+          resultCode: resultCode,
+          resultDescription: body.result?.description || 'Payment failed',
+          timestamp: new Date(),
+          webhookReceived: true
+        };
+        await booking.save();
+        
+        console.log('💾 Booking marked as failed');
+        
+        // Send failure email
+        const failureEmail = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #dc2626; padding: 20px; text-align: center; color: white;">
+              <h1>Payment Failed</h1>
+            </div>
+            <div style="padding: 30px; background: #f9fafb;">
+              <p>Hi ${booking.guestName},</p>
+              <p>Unfortunately, your payment could not be processed.</p>
+              <div style="background: #fee; padding: 20px; border-radius: 8px; border-left: 4px solid #dc2626;">
+                <p><strong>Reason:</strong> ${body.result?.description || 'Payment declined'}</p>
+              </div>
+              <div style="background: #dbeafe; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                <p style="margin: 0; color: #1e40af; font-size: 13px;">
+                  If payment was deducted, it will be refunded within 5-7 business days.
+                </p>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        sendEmail(booking.guestEmail, "Payment Failed - Wavescation", failureEmail)
+          .catch(err => console.error("📧 Email error:", err));
+          
+      } else {
+        console.log('⚠️ Unknown result code:', resultCode);
+      }
+  
+      console.log('🔔 Webhook processing complete');
+      console.log('🔔 ═══════════════════════════════════════');
+    } catch (error) {
+      console.error('💥 Webhook error:', error.message);
+      console.error(error.stack);
     }
-
-    console.log('🔔 ═══════════════════════════════════════');
-  } catch (error) {
-    console.error('💥 Webhook error:', error);
-  }
-});
+  });
 
 // ============================================
 // HEALTH CHECK ENDPOINT
