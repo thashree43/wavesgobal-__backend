@@ -308,6 +308,9 @@ export const initializeAFSPayment = async (req, res) => {
 // VERIFY AFS PAYMENT - ONLY rely on webhook
 // ============================================
 
+// ============================================
+// VERIFY AFS PAYMENT - FIXED VERSION
+// ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath, id, bookingId } = req.query;
@@ -345,14 +348,14 @@ export const verifyAFSPayment = async (req, res) => {
       });
     }
 
-    // If we have checkoutId, query AFS payment status
-    if (booking.paymentCheckoutId && id) {
+    // If we have checkoutId, query AFS payment status - FIXED ENDPOINT
+    if (booking.paymentCheckoutId) {
       try {
         const isTest = process.env.AFS_TEST_MODE === 'true';
         const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
         
-        // Use payments endpoint, not checkouts
-        const statusUrl = `${afsBaseUrl}/v1/payments/${id}?entityId=${process.env.AFS_ENTITY_ID}`;
+        // ✅ FIX: Use CHECKOUTS endpoint, not PAYMENTS endpoint
+        const statusUrl = `${afsBaseUrl}/v1/checkouts/${booking.paymentCheckoutId}/payment?entityId=${process.env.AFS_ENTITY_ID}`;
 
         console.log('🔍 Querying payment status:', statusUrl);
 
@@ -370,8 +373,8 @@ export const verifyAFSPayment = async (req, res) => {
         });
 
         const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
-        const pendingPattern = /^(000\.200|800\.400\.5|100\.400)/;
-        const rejectedPattern = /^(000\.400|800\.[17]00|800\.800|100\.[13])/;
+        const pendingPattern = /^(000\.200|800\.400\.5|100\.400\.500)/;
+        const rejectedPattern = /^(000\.400|800\.[17]00|800\.800|100\.[13]00|200\.[13]00)/;
 
         if (successPattern.test(statusResponse.data.result.code)) {
           // Payment successful
@@ -407,13 +410,7 @@ export const verifyAFSPayment = async (req, res) => {
           });
 
           // Send confirmation email
-          const emailHtml = `
-            <h1>Payment Successful!</h1>
-            <p>Hi ${booking.guestName},</p>
-            <p>Your booking ${booking._id} has been confirmed.</p>
-            <p>Amount: AED ${booking.totalPrice}</p>
-            <p>Transaction ID: ${statusResponse.data.id}</p>
-          `;
+          const emailHtml = generateConfirmationEmail(booking);
           
           sendEmail(booking.guestEmail, "Payment Successful - Wavescation", emailHtml)
             .catch(err => console.error("Email error:", err));
@@ -426,7 +423,7 @@ export const verifyAFSPayment = async (req, res) => {
           });
 
         } else if (pendingPattern.test(statusResponse.data.result.code)) {
-          console.log('⏳ Payment still PENDING');
+          console.log('⏳ Payment still PENDING:', statusResponse.data.result.description);
           return res.json({
             success: false,
             pending: true,
@@ -434,7 +431,7 @@ export const verifyAFSPayment = async (req, res) => {
           });
 
         } else if (rejectedPattern.test(statusResponse.data.result.code)) {
-          console.log('❌ Payment FAILED');
+          console.log('❌ Payment FAILED:', statusResponse.data.result.description);
           
           booking.paymentStatus = "failed";
           booking.bookingStatus = "cancelled";
@@ -450,6 +447,14 @@ export const verifyAFSPayment = async (req, res) => {
             success: false,
             failed: true,
             message: statusResponse.data.result.description || 'Payment failed'
+          });
+        } else {
+          // Unknown status
+          console.log('⚠️ Unknown payment status:', statusResponse.data.result.code);
+          return res.json({
+            success: false,
+            pending: true,
+            message: 'Payment status unknown, still processing...'
           });
         }
 
@@ -469,8 +474,8 @@ export const verifyAFSPayment = async (req, res) => {
       }
     }
 
-    // No payment ID yet - still pending
-    console.log('⏳ No payment ID, still pending');
+    // No checkout ID yet - still pending
+    console.log('⏳ No checkout ID, still pending');
     return res.json({
       success: false,
       pending: true,
