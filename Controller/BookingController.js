@@ -268,8 +268,7 @@ export const initializeAFSPayment = async (req, res) => {
   }
 };
 
-// ============================================
-// VERIFY AFS PAYMENT (USES STATUS API - NO WEBHOOK)
+
 // ============================================
 export const verifyAFSPayment = async (req, res) => {
   try {
@@ -325,28 +324,32 @@ export const verifyAFSPayment = async (req, res) => {
     }
 
     // ============================================
-    // 🔥 QUERY AFS PAYMENT STATUS API
+    // 🔥 CORRECT: Use checkoutId to query status
     // ============================================
-    console.log('🔍 Checking AFS Payment Status API...');
+    console.log('🔍 Checking AFS Payment Status...');
     
     try {
       const isTest = process.env.AFS_TEST_MODE === 'true';
       const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
       
-      // ✅ CRITICAL FIX: Use exact resourcePath from AFS
-      // resourcePath already contains the full path like: /v1/checkouts/XXX/payment
-      const fullUrl = `${afsBaseUrl}${resourcePath}?entityId=${process.env.AFS_ENTITY_ID}`;
+      // ✅ CRITICAL FIX: Extract checkoutId from resourcePath
+      // resourcePath format: /v1/checkouts/{id}/payment
+      // We need just the checkout ID, not the /payment part
+      const checkoutId = booking.paymentCheckoutId || id;
       
-      console.log('📤 Querying AFS Status API:', fullUrl);
+      // ✅ CORRECT: Query the checkout status endpoint (NOT /payment)
+      const statusUrl = `${afsBaseUrl}/v1/checkouts/${checkoutId}/payment?entityId=${process.env.AFS_ENTITY_ID}`;
+      
+      console.log('📤 Querying AFS Status:', statusUrl);
 
-      const statusResponse = await axios.get(fullUrl, {
+      const statusResponse = await axios.get(statusUrl, {
         headers: {
           'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`
         },
         timeout: 15000
       });
 
-      console.log('📥 Full AFS Response:', JSON.stringify(statusResponse.data, null, 2));
+      console.log('📥 AFS Status Response:', JSON.stringify(statusResponse.data, null, 2));
 
       const result = statusResponse.data.result;
       const resultCode = result?.code;
@@ -441,13 +444,13 @@ export const verifyAFSPayment = async (req, res) => {
         });
       }
 
-      // ⏳ STILL PENDING (e.g., 3D Secure authentication)
+      // ⏳ STILL PENDING (checkout created but no payment submitted)
       if (pendingPattern.test(resultCode)) {
-        console.log('⏳ Payment still pending (likely 3D Secure)');
+        console.log('⏳ Payment still pending');
         return res.json({
           success: false,
           pending: true,
-          message: 'Payment is being authenticated...'
+          message: 'Waiting for payment submission...'
         });
       }
 
@@ -475,7 +478,7 @@ export const verifyAFSPayment = async (req, res) => {
       }
 
       // ⚠️ UNKNOWN STATUS
-      console.log('⚠️ Unknown result code, treating as pending:', resultCode);
+      console.log('⚠️ Unknown result code:', resultCode);
       return res.json({
         success: false,
         pending: true,
@@ -485,19 +488,28 @@ export const verifyAFSPayment = async (req, res) => {
     } catch (apiError) {
       console.error('❌ AFS Status API Error:', apiError.message);
       if (apiError.response) {
-        console.error('❌ AFS Error Response:', JSON.stringify(apiError.response.data, null, 2));
+        console.error('❌ Response:', JSON.stringify(apiError.response.data, null, 2));
       }
       
-      // Fall back to pending
+      // If checkout not found, payment wasn't submitted
+      if (apiError.response?.status === 404) {
+        return res.json({
+          success: false,
+          cancelled: true,
+          message: 'Payment not completed'
+        });
+      }
+      
+      // Fall back to pending for other errors
       return res.json({
         success: false,
         pending: true,
-        message: 'Processing payment...'
+        message: 'Checking payment status...'
       });
     }
     
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Verification Error:', error);
     res.status(500).json({ success: false, message: 'Verification failed' });
   }
 };
