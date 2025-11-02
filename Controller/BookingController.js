@@ -275,15 +275,12 @@ export const verifyAFSPayment = async (req, res) => {
     if (booking.paymentStatus === 'confirmed') return res.json({ success: true, confirmed: true, booking });
     if (booking.paymentStatus === 'failed') return res.json({ success: false, failed: true, message: booking.paymentDetails?.resultDescription });
 
-    // Determine resourcePath or id
     let resourcePath = resourcePathQuery || booking.paymentResourcePath || null;
     const afsBaseUrl = process.env.AFS_TEST_MODE === 'true' ? 'https://test.oppwa.com' : 'https://oppwa.com';
-
-    // Construct AFS status URL safely
     let statusUrl = null;
+
     if (resourcePath) {
       if (!resourcePath.startsWith('/')) resourcePath = `/${resourcePath}`;
-      // Always append only entityId, no other parameters
       statusUrl = `${afsBaseUrl}${resourcePath.split('?')[0]}?entityId=${process.env.AFS_ENTITY_ID}`;
     } else if (id) {
       statusUrl = `${afsBaseUrl}/v1/payments/${encodeURIComponent(id)}?entityId=${process.env.AFS_ENTITY_ID}`;
@@ -313,6 +310,8 @@ export const verifyAFSPayment = async (req, res) => {
     // ✅ SUCCESS
     if (successPattern.test(resultCode)) {
       console.log('✅ PAYMENT SUCCESS');
+
+      // ✅ Immediate DB update (no webhook needed)
       booking.paymentTransactionId = statusResponse.data.id;
       booking.paymentDetails = {
         paymentBrand: statusResponse.data.paymentBrand,
@@ -329,6 +328,7 @@ export const verifyAFSPayment = async (req, res) => {
       booking.expiresAt = undefined;
       await booking.save();
 
+      // Update property availability
       await PropertyModel.findByIdAndUpdate(booking.property._id, {
         $push: {
           'availability.unavailableDates': {
@@ -338,10 +338,17 @@ export const verifyAFSPayment = async (req, res) => {
         },
       });
 
+      // Send email asynchronously
       sendEmail(booking.guestEmail, 'Payment Successful - Wavescation', /* html omitted */)
         .catch((err) => console.error('📧 Email error:', err));
 
-      return res.json({ success: true, confirmed: true, booking, message: 'Payment confirmed' });
+      // ✅ Added: respond immediately as confirmed
+      return res.json({
+        success: true,
+        confirmed: true,
+        booking,
+        message: 'Payment confirmed without webhook',
+      });
     }
 
     // ⏳ PENDING
@@ -405,6 +412,7 @@ export const verifyAFSPayment = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Verification failed' });
   }
 };
+
 
 
 
