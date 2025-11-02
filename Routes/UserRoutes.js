@@ -44,7 +44,10 @@ router.put('/cancel-booking/:bookingId', cancelBooking);
 // PAYMENT ROUTES
 // ============================================
 router.post("/initialize-afs-payment", initializeAFSPayment);
-router.get("/verify-payment", verifyAFSPayment); // Called after payment redirect
+router.get("/verify-payment", verifyAFSPayment,(req,res)=>{
+    console.log('🔔 WEBHOOK RECEIVED:', req.body);
+
+}); // Called after payment redirect
 router.get("/payment-status/:bookingId", checkPaymentStatus); // For polling
 
 // ❌ REMOVED: Webhook route is now in server.js BEFORE middleware
