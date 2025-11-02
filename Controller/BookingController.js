@@ -259,55 +259,33 @@ export const initializeAFSPayment = async (req, res) => {
 export const verifyAFSPayment = async (req, res) => {
   try {
     const { resourcePath: resourcePathQuery, id, bookingId } = req.query;
-    
     console.log('🔍 Verify payment:', { resourcePath: resourcePathQuery, id, bookingId });
 
-    if (!bookingId) {
-      return res.status(400).json({ success: false, message: 'Booking ID required' });
-    }
+    if (!bookingId) return res.status(400).json({ success: false, message: 'Booking ID required' });
 
     const token = req.headers.authorization?.split(' ')[1];
-    if (!token) return res.status(401).json({ message: "Unauthorized" });
-    
+    if (!token) return res.status(401).json({ message: 'Unauthorized' });
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     const booking = await BookingModel.findById(bookingId).populate('property');
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    if (booking.user.toString() !== decoded.id) return res.status(403).json({ message: 'Not authorized' });
 
-    if (!booking) return res.status(404).json({ message: "Booking not found" });
-    if (booking.user.toString() !== decoded.id) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
+    // Return early if already processed
+    if (booking.paymentStatus === 'confirmed') return res.json({ success: true, confirmed: true, booking });
+    if (booking.paymentStatus === 'failed') return res.json({ success: false, failed: true, message: booking.paymentDetails?.resultDescription });
 
-    if (booking.paymentStatus === 'confirmed') {
-      console.log('✅ Already confirmed');
-      return res.json({ success: true, confirmed: true, booking, message: 'Payment confirmed' });
-    }
-    if (booking.paymentStatus === 'failed') {
-      console.log('❌ Already failed');
-      return res.json({ success: false, failed: true, message: booking.paymentDetails?.resultDescription || 'Payment failed' });
-    }
-
-    // If frontend sent resourcePath use it, else use booking.paymentResourcePath, else fallback to id
+    // Determine resourcePath or id
     let resourcePath = resourcePathQuery || booking.paymentResourcePath || null;
+    const afsBaseUrl = process.env.AFS_TEST_MODE === 'true' ? 'https://test.oppwa.com' : 'https://oppwa.com';
 
-    const isTest = process.env.AFS_TEST_MODE === 'true';
-    const afsBaseUrl = isTest ? 'https://test.oppwa.com' : 'https://oppwa.com';
-
-    // If we have an id but no resourcePath, try using a payment-status endpoint with id
-    // (AFS can expose different endpoints; using resourcePath is preferred)
+    // Construct AFS status URL safely
     let statusUrl = null;
     if (resourcePath) {
-      // Ensure resourcePath starts with '/'
       if (!resourcePath.startsWith('/')) resourcePath = `/${resourcePath}`;
-      // If entityId already present in resourcePath, use it as-is
-      if (/[?&]entityId=/.test(resourcePath)) {
-        statusUrl = `${afsBaseUrl}${resourcePath}`;
-      } else {
-        // Append entityId safely (respect existing query string)
-        statusUrl = `${afsBaseUrl}${resourcePath}${resourcePath.includes('?') ? '&' : '?'}entityId=${process.env.AFS_ENTITY_ID}`;
-      }
+      // Always append only entityId, no other parameters
+      statusUrl = `${afsBaseUrl}${resourcePath.split('?')[0]}?entityId=${process.env.AFS_ENTITY_ID}`;
     } else if (id) {
-      // If only id provided, use the AFS payments endpoint form
       statusUrl = `${afsBaseUrl}/v1/payments/${encodeURIComponent(id)}?entityId=${process.env.AFS_ENTITY_ID}`;
     } else {
       return res.status(400).json({ success: false, message: 'resourcePath or id required to verify payment' });
@@ -315,136 +293,119 @@ export const verifyAFSPayment = async (req, res) => {
 
     console.log('📤 Querying AFS Status:', statusUrl);
 
-    try {
-      const statusResponse = await axios.get(statusUrl, {
-        headers: { 'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}` },
-        timeout: 15000
+    const statusResponse = await axios.get(statusUrl, {
+      headers: { Authorization: `Bearer ${process.env.AFS_ACCESS_TOKEN}` },
+      timeout: 15000,
+    });
+
+    console.log('📥 AFS Status Response:', JSON.stringify(statusResponse.data, null, 2));
+    const result = statusResponse.data.result || {};
+    const resultCode = result.code;
+
+    if (!resultCode) return res.json({ success: false, pending: true, message: 'Processing payment...' });
+
+    console.log('📊 Result Code:', resultCode, '-', result.description);
+
+    const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
+    const pendingPattern = /^(000\.200)/;
+    const failedPattern = /^(000\.400|800\.|900\.|100\.)/;
+
+    // ✅ SUCCESS
+    if (successPattern.test(resultCode)) {
+      console.log('✅ PAYMENT SUCCESS');
+      booking.paymentTransactionId = statusResponse.data.id;
+      booking.paymentDetails = {
+        paymentBrand: statusResponse.data.paymentBrand,
+        amount: parseFloat(statusResponse.data.amount || 0),
+        currency: statusResponse.data.currency,
+        resultCode: resultCode,
+        resultDescription: result.description,
+        timestamp: new Date(),
+        retrievedViaAPI: true,
+      };
+      booking.paymentStatus = 'confirmed';
+      booking.bookingStatus = 'confirmed';
+      booking.paymentMethod = 'online-payment';
+      booking.expiresAt = undefined;
+      await booking.save();
+
+      await PropertyModel.findByIdAndUpdate(booking.property._id, {
+        $push: {
+          'availability.unavailableDates': {
+            checkIn: booking.checkIn,
+            checkOut: booking.checkOut,
+          },
+        },
       });
 
-      console.log('📥 AFS Status Response:', JSON.stringify(statusResponse.data, null, 2));
-      const result = statusResponse.data.result || {};
-      const resultCode = result.code;
+      sendEmail(booking.guestEmail, 'Payment Successful - Wavescation', /* html omitted */)
+        .catch((err) => console.error('📧 Email error:', err));
 
-      if (!resultCode) {
-        console.error('❌ No result code in response');
-        return res.json({ success: false, pending: true, message: 'Processing payment...' });
-      }
+      return res.json({ success: true, confirmed: true, booking, message: 'Payment confirmed' });
+    }
 
-      console.log('📊 Result Code:', resultCode, '-', result.description);
+    // ⏳ PENDING
+    if (pendingPattern.test(resultCode)) {
+      console.log('⏳ Payment still pending');
+      return res.json({ success: false, pending: true, message: 'Waiting for payment submission...' });
+    }
 
-      const successPattern = /^(000\.000\.|000\.100\.1|000\.[36])/;
-      const pendingPattern = /^(000\.200)/;
-      const failedPattern = /^(000\.400|800\.|900\.|100\.)/;
+    // ❌ FAILED
+    if (failedPattern.test(resultCode)) {
+      console.log('❌ PAYMENT FAILED');
+      booking.paymentStatus = 'failed';
+      booking.bookingStatus = 'cancelled';
+      booking.paymentDetails = {
+        resultCode,
+        resultDescription: result.description,
+        timestamp: new Date(),
+        retrievedViaAPI: true,
+      };
+      await booking.save();
+      return res.json({ success: false, failed: true, message: result.description || 'Payment failed' });
+    }
 
-      // PAYMENT SUCCESS
-      if (successPattern.test(resultCode)) {
-        console.log('✅✅✅ PAYMENT SUCCESS ✅✅✅');
-        booking.paymentTransactionId = statusResponse.data.id;
-        booking.paymentDetails = {
-          paymentBrand: statusResponse.data.paymentBrand,
-          amount: parseFloat(statusResponse.data.amount || 0),
-          currency: statusResponse.data.currency,
-          resultCode: resultCode,
-          resultDescription: result.description,
-          cardBin: statusResponse.data.card?.bin,
-          cardLast4: statusResponse.data.card?.last4Digits,
-          timestamp: new Date(),
-          retrievedViaAPI: true
-        };
-        booking.paymentStatus = "confirmed";
-        booking.bookingStatus = "confirmed";
-        booking.paymentMethod = "online-payment";
-        booking.expiresAt = undefined;
-        await booking.save();
+    // ⚠️ Unknown status
+    console.log('⚠️ Unknown result code:', resultCode);
+    return res.json({ success: false, pending: true, message: 'Processing payment...', result });
 
-        await PropertyModel.findByIdAndUpdate(booking.property._id, {
-          $push: {
-            "availability.unavailableDates": {
-              checkIn: booking.checkIn,
-              checkOut: booking.checkOut
-            }
-          }
-        });
+  } catch (apiError) {
+    console.error('❌ AFS Status API Error:', apiError.message);
+    if (apiError.response) {
+      const errData = apiError.response.data;
+      const resCode = errData?.result?.code;
 
-        // queue/send email...
-        sendEmail(booking.guestEmail, "Payment Successful - Wavescation", /* html omitted */)
-          .catch(err => console.error("📧 Email error:", err));
-
-        return res.json({ success: true, confirmed: true, booking, message: 'Payment confirmed' });
-      }
-
-      // STILL PENDING
-      if (pendingPattern.test(resultCode)) {
-        console.log('⏳ Payment still pending');
-        return res.json({ success: false, pending: true, message: 'Waiting for payment submission...' });
-      }
-
-      // PAYMENT FAILED
-      if (failedPattern.test(resultCode)) {
-        console.log('❌ PAYMENT FAILED');
-        booking.paymentStatus = "failed";
-        booking.bookingStatus = "cancelled";
-        booking.paymentDetails = {
-          resultCode: resultCode,
-          resultDescription: result.description,
-          timestamp: new Date(),
-          retrievedViaAPI: true
-        };
-        await booking.save();
-
-        return res.json({ success: false, failed: true, message: result.description || 'Payment failed' });
-      }
-
-      // Unknown code -> return pending but include result
-      console.log('⚠️ Unknown result code:', resultCode);
-      return res.json({ success: false, pending: true, message: 'Processing payment...', result });
-
-    } catch (apiError) {
-      // If gateway returns parameterErrors (200.300.404) treat as cancelled/invalid
-      console.error('❌ AFS Status API Error:', apiError.message);
-      if (apiError.response) {
-        console.error('❌ Response:', JSON.stringify(apiError.response.data, null, 2));
-        const errData = apiError.response.data;
-        const resCode = errData?.result?.code;
-
-        // If parameter error / invalid parameter returned, return cancelled with details
-        if (resCode && resCode.startsWith('200.300')) {
-          const parameterErrors = errData.result.parameterErrors || [];
-          console.log('⚠️ Parameter errors from AFS:', parameterErrors);
-          
-          // Mark booking as failed/cancelled to avoid infinite polling
-          booking.paymentStatus = "failed";
-          booking.bookingStatus = "cancelled";
-          booking.paymentDetails = {
+      if (resCode && resCode.startsWith('200.300')) {
+        console.log('⚠️ Parameter error from AFS:', errData.result.parameterErrors);
+        await BookingModel.findByIdAndUpdate(req.query.bookingId, {
+          paymentStatus: 'failed',
+          bookingStatus: 'cancelled',
+          paymentDetails: {
             resultCode: resCode,
             resultDescription: errData.result.description,
-            parameterErrors,
+            parameterErrors: errData.result.parameterErrors,
             timestamp: new Date(),
-            retrievedViaAPI: true
-          };
-          await booking.save();
-
-          return res.json({
-            success: false,
-            failed: true,
-            message: 'Payment invalid / parameter error',
-            details: { code: resCode, description: errData.result.description, parameterErrors }
-          });
-        }
-
-        if (apiError.response.status === 404) {
-          return res.json({ success: false, cancelled: true, message: 'Payment not completed' });
-        }
+            retrievedViaAPI: true,
+          },
+        });
+        return res.json({
+          success: false,
+          failed: true,
+          message: 'Payment invalid / parameter error',
+          details: { code: resCode, description: errData.result.description },
+        });
       }
 
-      // Fallback to pending
-      return res.json({ success: false, pending: true, message: 'Checking payment status...' });
+      if (apiError.response.status === 404) {
+        return res.json({ success: false, cancelled: true, message: 'Payment not completed' });
+      }
     }
-  } catch (error) {
-    console.error('❌ Verification Error:', error);
-    res.status(500).json({ success: false, message: 'Verification failed' });
+
+    console.error('❌ Verification Error:', apiError);
+    return res.status(500).json({ success: false, message: 'Verification failed' });
   }
 };
+
 
 
 export const checkPaymentStatus = async (req, res) => {
