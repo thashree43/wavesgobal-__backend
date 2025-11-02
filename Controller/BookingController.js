@@ -210,8 +210,9 @@ export const initializeAFSPayment = async (req, res) => {
     params.append('billing.postcode', '00000');
     
     // Redirect URL
-    params.append('shopperResultUrl', shopperResultUrl);
-    
+    if (process.env.AFS_TEST_MODE !== 'true') {
+      params.append('shopperResultUrl', shopperResultUrl);
+    }    
     console.log('📤 AFS Request:', {
       url: afsUrl,
       amount: booking.totalPrice.toFixed(2),
