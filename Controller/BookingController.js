@@ -175,9 +175,9 @@ export const initializeAFSPayment = async (req, res) => {
     const booking = await BookingModel.findById(bookingId).populate('property');
 
     if (!booking) return res.status(404).json({ message: "Booking not found" });
-    if (booking.user.toString() !== decoded.id) {
-      return res.status(403).json({ message: "Not authorized" });
-    }
+    if (booking.user.toString() !== decoded.id) return res.status(403).json({ message: "Not authorized" });
+
+    // ✅ Expiry check
     if (booking.expiresAt && booking.expiresAt < new Date()) {
       booking.bookingStatus = "cancelled";
       await booking.save();
@@ -186,75 +186,85 @@ export const initializeAFSPayment = async (req, res) => {
 
     console.log('🔄 Creating AFS checkout');
 
-    const isTest = process.env.AFS_TEST_MODE === 'true';
-    const afsUrl = isTest ? 'https://test.oppwa.com/v1/checkouts' : 'https://oppwa.com/v1/checkouts';
+    // ✅ Use Live URL directly
+    const afsUrl = process.env.AFS_TEST_MODE === 'true'
+      ? 'https://test.oppwa.com/v1/checkouts'
+      : 'https://eu-prod.oppwa.com/v1/checkouts';
+
     const frontendUrl = (process.env.FRONTEND_URL || 'https://www.wavescation.com').replace(/\/$/, '');
     const shopperResultUrl = `${frontendUrl}/payment-return`;
 
+    // 💰 You can make this dynamic
+    const amount = booking.totalAmount || "10.00";
+    const currency = process.env.AFS_CURRENCY || "AED";
+
     const params = new URLSearchParams();
     params.append('entityId', process.env.AFS_ENTITY_ID);
-    params.append('amount', booking.totalPrice.toFixed(2));
-    params.append('currency', 'AED');
+    params.append('amount', amount);
+    params.append('currency', currency);
     params.append('paymentType', 'DB');
     params.append('merchantTransactionId', booking._id.toString());
-    
+
     // Customer details
     params.append('customer.email', booking.guestEmail || 'guest@wavescation.com');
     params.append('customer.givenName', booking.guestName || 'Guest');
     if (booking.guestPhone) params.append('customer.phone', booking.guestPhone);
-    
-    // Billing details
+
+    // Billing
     params.append('billing.street1', booking.property?.address || 'Dubai');
     params.append('billing.city', 'Dubai');
     params.append('billing.country', 'AE');
     params.append('billing.postcode', '00000');
-    
-    // Redirect URL
+
+    // Redirect URL for live only
     if (process.env.AFS_TEST_MODE !== 'true') {
       params.append('shopperResultUrl', shopperResultUrl);
-    }    
+    }
+
     console.log('📤 AFS Request:', {
       url: afsUrl,
-      amount: booking.totalPrice.toFixed(2),
+      amount,
       bookingId: booking._id.toString()
     });
 
     const response = await axios.post(afsUrl, params.toString(), {
       headers: {
-        'Authorization': `Bearer ${process.env.AFS_ACCESS_TOKEN}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
+        Authorization: `Bearer ${process.env.AFS_ACCESS_TOKEN}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
-      timeout: 20000
+      timeout: 20000,
     });
 
     console.log('📥 AFS Response:', response.data.result);
 
-    if (response.data.result.code.match(/^000\.200/)) {
+    if (response.data.result.code.match(/^(000\.000\.|000\.100\.1|000\.200)/)) {
       booking.paymentStatus = "pending";
       booking.bookingStatus = "pending";
       booking.paymentCheckoutId = response.data.id;
-      // Save resourcePath if returned (useful later)
-      if (response.data.resourcePath) {
-        booking.paymentResourcePath = response.data.resourcePath;
-      }
+      booking.paymentResourcePath = response.data.resourcePath || null;
       await booking.save();
-    
+
       res.json({
         success: true,
         checkoutId: response.data.id,
-        amount: booking.totalPrice
+        amount,
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: response.data.result?.description || 'AFS checkout creation failed',
       });
     }
-    
   } catch (error) {
     console.error('💥 Payment init error:', error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Payment initialization failed',
-      details: error.message
+      details: error.message,
     });
   }
 };
+
 
 
 export const verifyAFSPayment = async (req, res) => {
@@ -277,7 +287,7 @@ export const verifyAFSPayment = async (req, res) => {
     if (booking.paymentStatus === 'failed') return res.json({ success: false, failed: true, message: booking.paymentDetails?.resultDescription });
 
     let resourcePath = resourcePathQuery || booking.paymentResourcePath || null;
-    const afsBaseUrl = process.env.AFS_TEST_MODE === 'true' ? 'https://test.oppwa.com' : 'https://oppwa.com';
+    const afsBaseUrl = process.env.AFS_TEST_MODE === 'true' ? 'https://test.oppwa.com' : 'https://eu-prod.oppwa.com';
     let statusUrl = null;
 
     if (resourcePath) {

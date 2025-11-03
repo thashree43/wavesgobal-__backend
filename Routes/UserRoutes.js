@@ -6,6 +6,7 @@ import {getLocation, getproperties, getproperty} from "../Controller/Propertiesc
 import { bookingbyuser, createBooking, updateBookingDetails, confirmBooking, getCheckout, cancelBooking, initializeAFSPayment, verifyAFSPayment, checkPaymentStatus} from "../Controller/BookingController.js";
 import { googleAuth } from "../Controller/GoogleAuthController.js";
 import { submitReview,  getPropertyReviews,  markReviewHelpful, getUserReviews,  updateReview,  deleteReview } from "../Controller/ReviewController.js";
+import { afsWebhook } from "../utils/webhook.js";
 dotenv.config();
 
 const router = express.Router();
@@ -23,16 +24,11 @@ router.post("/forgot-password", forgotPassword);
 router.get("/validate-reset-token/:token", validateResetToken);
 router.post("/reset-password", resetPassword);
 
-// ============================================
-// PROPERTY ROUTES
-// ============================================
 router.get('/location', getLocation);
 router.get("/properties", getproperties);
 router.get("/property/:id", getproperty);
 
-// ============================================
-// BOOKING ROUTES
-// ============================================
+
 router.post("/add-booking", createBooking);
 router.put("/update-details", updateBookingDetails);
 router.post("/confirm-booking", confirmBooking);
@@ -40,32 +36,17 @@ router.get('/checkout', getCheckout);
 router.get("/get-booking", bookingbyuser);
 router.put('/cancel-booking/:bookingId', cancelBooking);
 
-// ============================================
-// PAYMENT ROUTES
-// ============================================
+
 router.post("/initialize-afs-payment", initializeAFSPayment);
-router.get("/verify-payment", verifyAFSPayment,(req,res)=>{
-    console.log('🔔 WEBHOOK RECEIVED:', req.body);
+router.get("/verify-payment", verifyAFSPayment); 
+router.get("/payment-status/:bookingId", checkPaymentStatus); 
+router.post('/user/afs-webhook', express.json(), afsWebhook);
 
-}); // Called after payment redirect
-router.get("/payment-status/:bookingId", checkPaymentStatus); // For polling
 
-// ❌ REMOVED: Webhook route is now in server.js BEFORE middleware
-// This ensures webhook is not blocked by CORS or auth
-// router.post("/afs-webhook", handleAFSWebhook); 
 
-// Test endpoints (for debugging)
-// router.post('/test-webhook', testWebhook);
-// router.get('/test-webhook', testWebhook);
-
-// ============================================
-// GOOGLE AUTH
-// ============================================
 router.post("/google-auth", googleAuth);
 
-// ============================================
-// REVIEW ROUTES
-// ============================================
+
 router.post("/:bookingId/review", submitReview);
 router.get("/review/:propertyId", getPropertyReviews);
 router.post("/review/:reviewId/helpful", markReviewHelpful);
