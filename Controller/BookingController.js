@@ -195,7 +195,7 @@ export const initializeAFSPayment = async (req, res) => {
     const shopperResultUrl = `${frontendUrl}/payment-return`;
 
     // 💰 You can make this dynamic
-    const amount = booking.totalAmount || "10.00";
+    const amount = booking.totalAmount;
     const currency = process.env.AFS_CURRENCY || "AED";
 
     const params = new URLSearchParams();
