@@ -215,11 +215,7 @@ export const initializeAFSPayment = async (req, res) => {
     params.append('billing.country', 'AE');
     params.append('billing.postcode', '00000');
 
-    // Redirect URL for live only
-    if (process.env.AFS_TEST_MODE !== 'true') {
-      params.append('shopperResultUrl', shopperResultUrl);
-    }
-
+  
     console.log('📤 AFS Request:', {
       url: afsUrl,
       amount,
