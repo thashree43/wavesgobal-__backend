@@ -799,7 +799,7 @@ function generatePaymentSuccessEmailTemplate(booking, property, paymentData) {
           </div>
 
           <div style="text-align: center;">
-            <a href="https://www.wavescation.com/bookings" class="cta-button">View My Bookings</a>
+            <a href="https://www.wavescation.com/profile" class="cta-button">View My Bookings</a>
           </div>
 
           <div class="message" style="margin-top: 30px;">
@@ -951,7 +951,7 @@ function generateConfirmationEmailTemplate(booking, property, paymentMethod) {
           </div>
 
           <div style="text-align: center;">
-            <a href="https://www.wavescation.com/bookings" class="cta-button">View My Bookings</a>
+            <a href="https://www.wavescation.com/profile" class="cta-button">View My Bookings</a>
           </div>
 
           <div class="message" style="margin-top: 30px;">
