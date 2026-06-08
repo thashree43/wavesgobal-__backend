@@ -137,7 +137,7 @@ export const changePass = async (req, res) => {
 export const addLocation = async (req, res) => {
     try {  
       const {name,description,status} = req.body
-      const image = req.file?.location;  
+      const image = req.file.path;
 
       const existlocation = await locationmodel.findOne({name}).lean();
 
@@ -181,7 +181,7 @@ export const getlocation = async(req,res)=>{
 export const UpdateLocation = async (req, res) => {
   try {
     const { id, name, description, status } = req.body;
-    const image = req.file?.location;
+    const image = req.file.path;
 
     if (!id) {
       return res.status(400).json({ message: "Location ID is required" });
@@ -239,7 +239,7 @@ export const addproperty = async (req, res) => {
     } = req.body;
 
     const images = req.files ? req.files.map(file => ({
-      url: file.location,
+      url: file.path,
       name: file.originalname,
       id: file.filename
     })) : [];
@@ -593,13 +593,13 @@ export const updateProperty = async (req, res) => {
       };
     }
 
-    if (req.files && req.files.length > 0) {
-      updateData.images = req.files.map(file => ({
-        url: file.location,
-        name: file.originalname,
-        id: file.filename
-      }));
-    }
+        if (req.files && req.files.length > 0) {
+        updateData.images = req.files.map(file => ({
+          url: file.path,
+          name: file.originalname,
+          id: file.filename
+        }));
+      }
 
     const updatedProperty = await PropertyModel.findByIdAndUpdate(
       id,
