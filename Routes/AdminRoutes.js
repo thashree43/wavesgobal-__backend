@@ -1,8 +1,8 @@
 import express from "express";
 import multer from "multer";
-import multerS3 from "multer-s3";
-import { S3Client } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import cloudinary from "../config/cloudinary.js";
 import { UpdateLocation, addLocation, addproperty, adminLogin, adminLogout, adminRegister, blockUnblockUser, cancelBooking, changePass, deleteProperty, deleteReview, getAdmin, getAllReviews, getBookings, getProperty, getReviewById, getUsers, getlocation, markChekout, updateProperty } from "../Controller/AdminController.js";
 import { getBookingStatus, getDashboardData, getDashboardStats, getMonthlyRevenue, getPropertyTypes, getRecentBookings, getTopLocations, getUserGrowth } from "./DashboardController.js";
 import { verifyAdmin } from "../Middleware/AuthMiddleware.js";
@@ -10,38 +10,34 @@ dotenv.config();
 
 const Adminrouter = express.Router();
 
-const s3Client = new S3Client({
-  region: "eu-north-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY || "",
-    secretAccessKey: process.env.AWS_SECRET_KEY || "",
+
+
+const categoryStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "waveslocation",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
   },
 });
 
 const categoryUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: "waveslocation",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      cb(null, Date.now().toString() + "-" + file.originalname);
-    },
-  }),
+  storage: categoryStorage,
+});
+
+const propertyStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "wavesproperty",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+  },
 });
 
 const propertyUpload = multer({
-  storage: multerS3({
-    s3: s3Client,
-    bucket: "wavesproperty",
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      cb(null, Date.now().toString() + "-" + file.originalname);
-    },
-  }),
+  storage: propertyStorage,
   limits: {
     files: 10,
-    fileSize: 20 * 1024 * 1024, // 20MB max per file
-    fieldSize: 25 * 1024 * 1024, // 25MB max for text fields
+    fileSize: 20 * 1024 * 1024,
+    fieldSize: 25 * 1024 * 1024,
   },
 });
 
