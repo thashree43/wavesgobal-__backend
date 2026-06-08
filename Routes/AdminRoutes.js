@@ -16,7 +16,7 @@ const categoryStorage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: "waveslocation",
-    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    allowed_formats: ["jpg", "jpeg", "png", "webp","avif"],
   },
 });
 
@@ -28,7 +28,7 @@ const propertyStorage = new CloudinaryStorage({
   cloudinary,
   params: {
     folder: "wavesproperty",
-    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    allowed_formats: ["jpg", "jpeg", "png", "webp","avif","gif"],
   },
 });
 
